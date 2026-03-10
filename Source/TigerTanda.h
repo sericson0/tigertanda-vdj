@@ -59,16 +59,15 @@ inline constexpr int DLG_H          = 336;           // 20% shorter than origina
 inline constexpr int DLG_W_WIDE     = 560;
 inline constexpr int DLG_W_COMPACT  = 320;
 inline constexpr int DLG_W          = DLG_W_WIDE;   // alias for wide-mode paint code
-inline constexpr int TOP_H          = 36;
-inline constexpr int RIBBON_H       = 22;            // wide-mode settings ribbon
+inline constexpr int TOP_H          = 40;            // tall enough to fit filter buttons
 inline constexpr int TAB_H          = 28;            // compact mode tab-strip height
 inline constexpr int LEFT_W         = 230;
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;            // match magnifying glass button height
-inline constexpr int CAND_ITEM_H    = 26;
+inline constexpr int CAND_ITEM_H    = 34;
 inline constexpr int RESULT_ITEM_H  = 20;
-inline constexpr int DETAIL_BOX_H   = 52;            // metadata detail box for selected result
+inline constexpr int DETAIL_BOX_H   = 60;            // metadata detail box for selected result (3 rows)
 
 // Right panel x-origin / width (wide mode)
 inline constexpr int RIGHT_X = LEFT_W + PAD * 2;

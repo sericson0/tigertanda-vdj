@@ -58,8 +58,8 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
 {
     candidates.clear();
     confirmedIdx = -1;
-    results.clear();
-    selectedResultIdx = -1;
+    // NOTE: results and selectedResultIdx are intentionally NOT cleared here.
+    // The results panel only updates when the user confirms a candidate.
 
     if (title.empty()) return;
 
@@ -81,10 +81,6 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
             SendMessageW (hCandList, LB_ADDSTRING, 0, (LPARAM) L"");
         }
     }
-
-    // Clear results list
-    if (hResultsList)
-        SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
