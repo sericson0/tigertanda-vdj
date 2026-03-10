@@ -37,15 +37,6 @@ static TigerTandaPlugin* getPlugin (HWND hwnd)
     return reinterpret_cast<TigerTandaPlugin*> (GetWindowLongPtrW (hwnd, GWLP_USERDATA));
 }
 
-// Draw a flat "tag" badge at (x,y) with given width
-static void drawBadge (HDC hdc, int x, int y, int w, int h,
-                       const std::wstring& text, COLORREF bg, COLORREF fg, HFONT font)
-{
-    RECT r { x, y, x + w, y + h };
-    fillRect (hdc, r, bg);
-    drawText (hdc, r, text, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Owner-draw buttons (flat dark style)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,18 +50,17 @@ static void drawOwnerButton (const DRAWITEMSTRUCT* di, const std::wstring& label
     bool disabled = (di->itemState & ODS_DISABLED) != 0;
 
     COLORREF bg = pressed  ? TCol::buttonHover
-                : disabled ? RGB(24, 28, 42)
+                : disabled ? RGB (24, 28, 42)
                            : bgColor;
     fillRect (hdc, r, bg);
 
-    // border
     HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
     HPEN oldPen = (HPEN) SelectObject (hdc, pen);
-    MoveToEx (hdc, r.left, r.bottom - 1, nullptr);
-    LineTo (hdc, r.right - 1, r.bottom - 1);
-    LineTo (hdc, r.right - 1, r.top);
-    LineTo (hdc, r.left, r.top);
-    LineTo (hdc, r.left, r.bottom - 1);
+    MoveToEx (hdc, r.left,     r.bottom - 1, nullptr);
+    LineTo   (hdc, r.right - 1, r.bottom - 1);
+    LineTo   (hdc, r.right - 1, r.top);
+    LineTo   (hdc, r.left,      r.top);
+    LineTo   (hdc, r.left,      r.bottom - 1);
     SelectObject (hdc, oldPen);
     DeleteObject (pen);
 
@@ -78,7 +68,7 @@ static void drawOwnerButton (const DRAWITEMSTRUCT* di, const std::wstring& label
     drawText (hdc, r, label, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
-// Draw a segment of the 3-part toggle
+// Draw a segment of the 3-part source toggle
 static void drawSegmentButton (const DRAWITEMSTRUCT* di, const std::wstring& label,
                                bool isActive, HFONT font, bool isLeft, bool isRight)
 {
@@ -93,32 +83,53 @@ static void drawSegmentButton (const DRAWITEMSTRUCT* di, const std::wstring& lab
 
     fillRect (hdc, r, bg);
 
-    // border
     HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
     HPEN oldPen = (HPEN) SelectObject (hdc, pen);
-    // Top and bottom always
-    MoveToEx (hdc, r.left, r.top, nullptr);
-    LineTo (hdc, r.right, r.top);
-    MoveToEx (hdc, r.left, r.bottom - 1, nullptr);
-    LineTo (hdc, r.right, r.bottom - 1);
-    // Left edge
-    if (isLeft)
-    {
-        MoveToEx (hdc, r.left, r.top, nullptr);
-        LineTo (hdc, r.left, r.bottom);
-    }
-    // Right edge
-    if (isRight)
-    {
-        MoveToEx (hdc, r.right - 1, r.top, nullptr);
-        LineTo (hdc, r.right - 1, r.bottom);
-    }
-    // Inner divider on the right side (if not rightmost)
-    if (!isRight)
-    {
-        MoveToEx (hdc, r.right - 1, r.top, nullptr);
-        LineTo (hdc, r.right - 1, r.bottom);
-    }
+    MoveToEx (hdc, r.left,  r.top,        nullptr);
+    LineTo   (hdc, r.right, r.top);
+    MoveToEx (hdc, r.left,  r.bottom - 1, nullptr);
+    LineTo   (hdc, r.right, r.bottom - 1);
+    if (isLeft)  { MoveToEx (hdc, r.left,      r.top, nullptr); LineTo (hdc, r.left,      r.bottom); }
+    if (isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
+    // inner divider on the right
+    if (!isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
+    SelectObject (hdc, oldPen);
+    DeleteObject (pen);
+
+    drawText (hdc, r, label, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+// Draw a tab button (3-way tab strip in compact mode)
+static void drawTabButton (const DRAWITEMSTRUCT* di, const std::wstring& label,
+                           bool isActive, HFONT font, bool isLeft, bool isRight)
+{
+    HDC hdc = di->hDC;
+    RECT r = di->rcItem;
+    bool pressed = (di->itemState & ODS_SELECTED) != 0;
+
+    COLORREF bg = isActive ? TCol::card
+                : pressed  ? TCol::buttonHover
+                           : TCol::panel;
+    COLORREF fg = isActive ? TCol::accentBrt : TCol::textDim;
+
+    fillRect (hdc, r, bg);
+
+    HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
+    HPEN oldPen = (HPEN) SelectObject (hdc, pen);
+    // Top border (accent colour when active)
+    HPEN accentPen = CreatePen (PS_SOLID, 2, isActive ? TCol::accent : TCol::cardBorder);
+    SelectObject (hdc, accentPen);
+    MoveToEx (hdc, r.left,  r.top, nullptr);
+    LineTo   (hdc, r.right, r.top);
+    SelectObject (hdc, pen);
+    DeleteObject (accentPen);
+    // Bottom
+    MoveToEx (hdc, r.left,  r.bottom - 1, nullptr);
+    LineTo   (hdc, r.right, r.bottom - 1);
+    // Sides
+    if (isLeft)  { MoveToEx (hdc, r.left,      r.top, nullptr); LineTo (hdc, r.left,      r.bottom); }
+    if (isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
+    if (!isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
     SelectObject (hdc, oldPen);
     DeleteObject (pen);
 
@@ -126,95 +137,235 @@ static void drawSegmentButton (const DRAWITEMSTRUCT* di, const std::wstring& lab
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Paint the reference-song card area
+//  applyLayout – reposition + show/hide all controls for the current mode/tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-static void paintRefCard (TigerTandaPlugin* p, HDC hdc)
+static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
 {
-    // The ref card sits in the left panel, below the search controls
-    const int labelH = 18;
-    int y0 = TOP_H + PAD
-           + labelH + PAD / 2         // "IDENTIFY SONG" section label
-           + BTN_H  + PAD             // 3-part toggle
-           + EDIT_H + PAD             // search row (title + artist + btn)
-           + (CAND_ITEM_H * 5)        // candidates list (approx)
-           + PAD + labelH + PAD;      // "REFERENCE SONG" section label
+    if (!p || !hwnd) return;
 
-    RECT cardR { PAD, y0, PAD + LEFT_W - PAD, y0 + REF_CARD_H };
+    const int cw = (p->viewMode == 0) ? DLG_W_WIDE : DLG_W_COMPACT;
 
-    if (p->confirmedIdx < 0 || p->confirmedIdx >= (int) p->candidates.size())
+    // Resize the window
+    SetWindowPos (hwnd, nullptr, 0, 0, cw, DLG_H,
+                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // ── Top-bar buttons (right-anchored) ────────────────────────────────────
+    const int topY = (TOP_H - BTN_H) / 2;           // = 6
+    // Close [×]
+    MoveWindow (p->hBtnClose,        cw - 28,        topY, 22, BTN_H, FALSE);
+    // Reset
+    MoveWindow (p->hBtnReset,        cw - 28 - 4 - 54, topY, 54, BTN_H, FALSE);
+    // Layout toggle ("Compact" / "Wide")
+    MoveWindow (p->hBtnLayoutToggle, cw - 28 - 4 - 54 - 4 - 76, topY, 76, BTN_H, FALSE);
+    SetWindowTextW (p->hBtnLayoutToggle, p->viewMode == 0 ? L"Compact" : L"Wide");
+
+    // ── Tab strip (compact only) ────────────────────────────────────────────
+    if (p->viewMode == 1)
     {
-        // placeholder
-        fillRect (hdc, cardR, TCol::card);
-        HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-        HPEN old = (HPEN) SelectObject (hdc, pen);
-        RECT rr = cardR;
-        MoveToEx (hdc, rr.left, rr.bottom - 1, nullptr);
-        LineTo (hdc, rr.right - 1, rr.bottom - 1);
-        LineTo (hdc, rr.right - 1, rr.top);
-        LineTo (hdc, rr.left, rr.top);
-        LineTo (hdc, rr.left, rr.bottom - 1);
-        SelectObject (hdc, old);
-        DeleteObject (pen);
-
-        RECT tr = { cardR.left + 8, cardR.top, cardR.right - 8, cardR.bottom };
-        drawText (hdc, tr, L"Click a candidate below to confirm", TCol::textDim, p->fontSmall,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        return;
+        const int tabW = DLG_W_COMPACT / 3;          // = 120
+        MoveWindow (p->hBtnTabIdentify, 0,       TOP_H, tabW,                     TAB_H, FALSE);
+        MoveWindow (p->hBtnTabResults,  tabW,    TOP_H, tabW,                     TAB_H, FALSE);
+        MoveWindow (p->hBtnTabSettings, tabW*2,  TOP_H, DLG_W_COMPACT - tabW*2,  TAB_H, FALSE);
+        ShowWindow (p->hBtnTabIdentify,  SW_SHOW);
+        ShowWindow (p->hBtnTabResults,   SW_SHOW);
+        ShowWindow (p->hBtnTabSettings,  SW_SHOW);
+    }
+    else
+    {
+        ShowWindow (p->hBtnTabIdentify,  SW_HIDE);
+        ShowWindow (p->hBtnTabResults,   SW_HIDE);
+        ShowWindow (p->hBtnTabSettings,  SW_HIDE);
     }
 
-    const TgRecord& rec = p->candidates[p->confirmedIdx].record;
+    // ── Helper lambdas ───────────────────────────────────────────────────────
+    auto showCtrl = [](HWND h, bool vis)
+    {
+        if (h) ShowWindow (h, vis ? SW_SHOW : SW_HIDE);
+    };
 
-    fillRect (hdc, cardR, TCol::card);
+    // ── WIDE MODE ────────────────────────────────────────────────────────────
+    if (p->viewMode == 0)
+    {
+        const int lx = PAD;
+        const int lw = LEFT_W - PAD;   // 262
+        int ly = TOP_H + PAD;           // 44
 
-    // border accent line on the left
-    RECT accentBar { cardR.left, cardR.top, cardR.left + 3, cardR.bottom };
-    fillRect (hdc, accentBar, TCol::accent);
+        // "IDENTIFY SONG" section label painted in WM_PAINT — skip 14+4
+        ly += 14 + 4;                   // 62
 
-    int tx = cardR.left + 10;
-    int ty = cardR.top + 6;
-    int tw = cardR.right - tx - 6;
+        // 3-part source toggle
+        {
+            const int segW = lw / 3;
+            const int segR = lw - segW * 3;
+            MoveWindow (p->hBtnSrcBrowser, lx,            ly, segW,         BTN_H, FALSE);
+            MoveWindow (p->hBtnSrcDeckAct, lx + segW,     ly, segW,         BTN_H, FALSE);
+            MoveWindow (p->hBtnSrcDeckOth, lx + segW * 2, ly, segW + segR,  BTN_H, FALSE);
+        }
+        ly += BTN_H + 6;                // 92
 
-    // Title (bold white)
-    RECT titleR { tx, ty, tx + tw, ty + 18 };
-    std::wstring displayTitle = rec.title.empty() ? L"(no title)" : rec.title;
-    drawText (hdc, titleR, displayTitle, TCol::textBright, p->fontBold,
-              DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-    ty += 20;
+        // Search row
+        {
+            const int sbW = BTN_H;      // square search button
+            const int gap = 4;
+            const int etW = lw - sbW - gap;
+            const int tW  = etW * 55 / 100;
+            const int aW  = etW - tW - gap;
+            MoveWindow (p->hEditTitle,  lx,              ly, tW,  EDIT_H, FALSE);
+            MoveWindow (p->hEditArtist, lx + tW + gap,   ly, aW,  EDIT_H, FALSE);
+            MoveWindow (p->hBtnSearch,  lx + lw - sbW,   ly - (BTN_H - EDIT_H) / 2, sbW, BTN_H, FALSE);
+        }
+        ly += EDIT_H + 6;               // 116
 
-    // Bandleader (accent)
-    RECT blR { tx, ty, tx + tw, ty + 16 };
-    drawText (hdc, blR, rec.bandleader, TCol::accentBrt, p->fontNormal,
-              DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-    ty += 18;
+        // Filter checkboxes — 2 rows × 3 columns
+        {
+            const int colW = lw / 3;    // ≈ 87
+            const int ckH  = 17;
+            MoveWindow (p->hChkArtist,    lx,              ly, colW,          ckH, FALSE);
+            MoveWindow (p->hChkSinger,    lx + colW,       ly, colW,          ckH, FALSE);
+            MoveWindow (p->hChkGrouping,  lx + colW * 2,   ly, lw - colW * 2, ckH, FALSE);
+            ly += ckH + 4;              // 137
+            MoveWindow (p->hChkGenre,     lx,              ly, colW,          ckH, FALSE);
+            MoveWindow (p->hChkOrchestra, lx + colW,       ly, colW,          ckH, FALSE);
+            MoveWindow (p->hChkLabel,     lx + colW * 2,   ly, lw - colW * 2, ckH, FALSE);
+            ly += ckH + 4;              // 158
+        }
 
-    // Singer . Year . Genre . Grouping (dim text)
-    std::wstring detail;
-    if (!rec.singer.empty()) detail += rec.singer;
-    if (!rec.year.empty())   { if (!detail.empty()) detail += L"  \u00B7  "; detail += rec.year; }
-    if (!rec.genre.empty())  { if (!detail.empty()) detail += L"  \u00B7  "; detail += rec.genre; }
-    if (!rec.grouping.empty()){ if (!detail.empty()) detail += L"  \u00B7  "; detail += rec.grouping; }
+        // Year range — "yr±" label painted in WM_PAINT at lx, ly
+        MoveWindow (p->hEditYearRange, lx + 28,      ly, 38, EDIT_H, FALSE);
+        MoveWindow (p->hSpinYear,      lx + 28 + 38, ly, 16, EDIT_H, FALSE);
+        ly += EDIT_H + 6;              // 182
 
-    RECT detR { tx, ty, tx + tw, ty + 14 };
-    drawText (hdc, detR, detail, TCol::textDim, p->fontSmall,
-              DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        // "CANDIDATES" label painted in WM_PAINT — skip 14+4
+        ly += 14 + 4;                  // 200
+
+        // Candidates list — fills to bottom
+        MoveWindow (p->hCandList, lx, ly, lw, DLG_H - ly - PAD, FALSE);
+
+        // Show all identify-side controls
+        showCtrl (p->hBtnSrcBrowser, true);
+        showCtrl (p->hBtnSrcDeckAct, true);
+        showCtrl (p->hBtnSrcDeckOth, true);
+        showCtrl (p->hEditTitle,     true);
+        showCtrl (p->hEditArtist,    true);
+        showCtrl (p->hBtnSearch,     true);
+        showCtrl (p->hChkArtist,     true);
+        showCtrl (p->hChkSinger,     true);
+        showCtrl (p->hChkGrouping,   true);
+        showCtrl (p->hChkGenre,      true);
+        showCtrl (p->hChkOrchestra,  true);
+        showCtrl (p->hChkLabel,      true);
+        showCtrl (p->hEditYearRange, true);
+        showCtrl (p->hSpinYear,      true);
+        showCtrl (p->hCandList,      true);
+
+        // Right panel
+        const int rx = RIGHT_X;
+        const int rw = DLG_W_WIDE - rx - PAD;
+        int ry = TOP_H + PAD + 14 + 4; // 62 (below "SIMILAR SONGS" label)
+        const int vdjBtnY = DLG_H - PAD - BTN_H;
+        MoveWindow (p->hResultsList, rx, ry, rw, vdjBtnY - ry - PAD, FALSE);
+        MoveWindow (p->hBtnSearchVdj, rx, vdjBtnY, rw, BTN_H, FALSE);
+        showCtrl (p->hResultsList,  true);
+        showCtrl (p->hBtnSearchVdj, true);
+    }
+    // ── COMPACT MODE ─────────────────────────────────────────────────────────
+    else
+    {
+        const int lx     = PAD;
+        const int lw     = DLG_W_COMPACT - PAD * 2;  // 344
+        const int bodyY  = TOP_H + TAB_H;             // 64
+        const bool showI = (p->activeTab == 0);
+        const bool showR = (p->activeTab == 1);
+        const bool showS = (p->activeTab == 2);
+
+        // ── Identify tab ─────────────────────────────────────────────────────
+        if (showI)
+        {
+            int ly = bodyY + PAD;   // 72
+
+            const int segW = lw / 3;
+            const int segR = lw - segW * 3;
+            MoveWindow (p->hBtnSrcBrowser, lx,            ly, segW,         BTN_H, FALSE);
+            MoveWindow (p->hBtnSrcDeckAct, lx + segW,     ly, segW,         BTN_H, FALSE);
+            MoveWindow (p->hBtnSrcDeckOth, lx + segW * 2, ly, segW + segR,  BTN_H, FALSE);
+            ly += BTN_H + 6;        // 102
+
+            const int sbW = BTN_H;
+            const int gap = 4;
+            const int etW = lw - sbW - gap;
+            const int tW  = etW * 55 / 100;
+            const int aW  = etW - tW - gap;
+            MoveWindow (p->hEditTitle,  lx,            ly, tW,  EDIT_H, FALSE);
+            MoveWindow (p->hEditArtist, lx + tW + gap, ly, aW,  EDIT_H, FALSE);
+            MoveWindow (p->hBtnSearch,  lx + lw - sbW, ly - (BTN_H - EDIT_H) / 2, sbW, BTN_H, FALSE);
+            ly += EDIT_H + 6;       // 126
+
+            MoveWindow (p->hCandList, lx, ly, lw, DLG_H - ly - PAD, FALSE);
+        }
+        showCtrl (p->hBtnSrcBrowser, showI);
+        showCtrl (p->hBtnSrcDeckAct, showI);
+        showCtrl (p->hBtnSrcDeckOth, showI);
+        showCtrl (p->hEditTitle,     showI);
+        showCtrl (p->hEditArtist,    showI);
+        showCtrl (p->hBtnSearch,     showI);
+        showCtrl (p->hCandList,      showI);
+
+        // ── Results tab ──────────────────────────────────────────────────────
+        if (showR)
+        {
+            int ry = bodyY + PAD;   // 72
+            const int vdjBtnY = DLG_H - PAD - BTN_H;
+            MoveWindow (p->hResultsList,  lx, ry,      lw, vdjBtnY - ry - PAD, FALSE);
+            MoveWindow (p->hBtnSearchVdj, lx, vdjBtnY, lw, BTN_H,              FALSE);
+        }
+        showCtrl (p->hResultsList,  showR);
+        showCtrl (p->hBtnSearchVdj, showR);
+
+        // ── Settings tab ─────────────────────────────────────────────────────
+        if (showS)
+        {
+            int sy = bodyY + PAD;   // 72
+            const int colW = lw / 3;    // ≈ 114
+            const int ckH  = 18;
+            MoveWindow (p->hChkArtist,    lx,            sy, colW,          ckH, FALSE);
+            MoveWindow (p->hChkSinger,    lx + colW,     sy, colW,          ckH, FALSE);
+            MoveWindow (p->hChkGrouping,  lx + colW * 2, sy, lw - colW * 2, ckH, FALSE);
+            sy += ckH + 6;          // 96
+            MoveWindow (p->hChkGenre,     lx,            sy, colW,          ckH, FALSE);
+            MoveWindow (p->hChkOrchestra, lx + colW,     sy, colW,          ckH, FALSE);
+            MoveWindow (p->hChkLabel,     lx + colW * 2, sy, lw - colW * 2, ckH, FALSE);
+            sy += ckH + 8;          // 122
+            // "yr±" painted in WM_PAINT
+            MoveWindow (p->hEditYearRange, lx + 28,      sy, 38, EDIT_H, FALSE);
+            MoveWindow (p->hSpinYear,      lx + 28 + 38, sy, 16, EDIT_H, FALSE);
+        }
+        showCtrl (p->hChkArtist,    showS);
+        showCtrl (p->hChkSinger,    showS);
+        showCtrl (p->hChkGrouping,  showS);
+        showCtrl (p->hChkGenre,     showS);
+        showCtrl (p->hChkOrchestra, showS);
+        showCtrl (p->hChkLabel,     showS);
+        showCtrl (p->hEditYearRange, showS);
+        showCtrl (p->hSpinYear,      showS);
+    }
+
+    // Force full repaint
+    InvalidateRect (hwnd, nullptr, TRUE);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Helper: set source mode and update segment button highlights
+//  Helper: set source mode and repaint toggle buttons
 // ─────────────────────────────────────────────────────────────────────────────
 
-static void updateSourceToggle (TigerTandaPlugin* p, int newMode, HWND hwnd)
+static void updateSourceToggle (TigerTandaPlugin* p, int newMode, HWND /*hwnd*/)
 {
     p->sourceMode = newMode;
     p->lastSeenTitle.clear();
     p->lastSeenArtist.clear();
-
-    // Force repaint of all 3 segment buttons
     if (p->hBtnSrcBrowser) InvalidateRect (p->hBtnSrcBrowser, nullptr, FALSE);
     if (p->hBtnSrcDeckAct) InvalidateRect (p->hBtnSrcDeckAct, nullptr, FALSE);
     if (p->hBtnSrcDeckOth) InvalidateRect (p->hBtnSrcDeckOth, nullptr, FALSE);
-
     p->saveSettings();
 }
 
@@ -243,7 +394,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_CLOSE:
         if (p)
         {
-            p->dialogRequestedOpen = false;
+            p->dialogRequestedOpen  = false;
             p->suppressNextHideSync = true;
         }
         ShowWindow (hwnd, SW_HIDE);
@@ -281,176 +432,100 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     {
         if (!p) break;
 
-        // ── Top bar controls ──────────────────────────────────────────────────
-        p->hBtnClose = CreateWindowW (L"BUTTON", L"X",
-                                      WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                      DLG_W - 36, (TOP_H - 24) / 2, 26, 24,
-                                      hwnd, (HMENU) IDC_BTN_CLOSE, nullptr, nullptr);
-        p->hBtnReset = CreateWindowW (L"BUTTON", L"Reset",
-                                      WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                      DLG_W - 100, (TOP_H - 24) / 2, 58, 24,
-                                      hwnd, (HMENU) IDC_BTN_RESET, nullptr, nullptr);
+        // Create all controls at a dummy position; applyLayout will move them.
+        auto mkBtn = [&](int id, const wchar_t* text, DWORD style = WS_CHILD | WS_VISIBLE | BS_OWNERDRAW) -> HWND
+        {
+            return CreateWindowW (L"BUTTON", text, style,
+                                  0, 0, 10, 10, hwnd, (HMENU)(intptr_t)id, nullptr, nullptr);
+        };
+        auto mkChk = [&](int id, const wchar_t* text) -> HWND
+        {
+            HWND h = CreateWindowW (L"BUTTON", text,
+                                    WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                                    0, 0, 10, 10, hwnd, (HMENU)(intptr_t)id, nullptr, nullptr);
+            SetWindowTheme (h, L"", L"");
+            return h;
+        };
 
-        // Filters inline in top bar (x starts at 178, checkboxes then year spinner)
-        const int chkY = (TOP_H - 18) / 2;
-        int cx = 178;
+        // Top-bar buttons
+        p->hBtnClose        = mkBtn (IDC_BTN_CLOSE,        L"X");
+        p->hBtnReset        = mkBtn (IDC_BTN_RESET,        L"Reset");
+        p->hBtnLayoutToggle = mkBtn (IDC_BTN_LAYOUT_TOGGLE, L"Compact");
 
-        p->hChkArtist = CreateWindowW (L"BUTTON", L"Artist",
-                                       WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                       cx, chkY, 58, 18,
-                                       hwnd, (HMENU) IDC_CHK_SAME_ARTIST, nullptr, nullptr);
-        SendMessageW (p->hChkArtist, BM_SETCHECK, p->filterSameArtist ? BST_CHECKED : BST_UNCHECKED, 0);
-        SetWindowTheme (p->hChkArtist, L"", L"");
-        cx += 62;
+        // Compact-mode tab buttons (hidden until layout applied)
+        p->hBtnTabIdentify  = mkBtn (IDC_BTN_TAB_IDENTIFY, L"Identify");
+        p->hBtnTabResults   = mkBtn (IDC_BTN_TAB_RESULTS,  L"Results");
+        p->hBtnTabSettings  = mkBtn (IDC_BTN_TAB_SETTINGS, L"Settings");
 
-        p->hChkSinger = CreateWindowW (L"BUTTON", L"Singer",
-                                       WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                       cx, chkY, 58, 18,
-                                       hwnd, (HMENU) IDC_CHK_SAME_SINGER, nullptr, nullptr);
-        SendMessageW (p->hChkSinger, BM_SETCHECK, p->filterSameSinger ? BST_CHECKED : BST_UNCHECKED, 0);
-        SetWindowTheme (p->hChkSinger, L"", L"");
-        cx += 62;
+        // Source toggle
+        p->hBtnSrcBrowser   = mkBtn (IDC_BTN_SRC_BROWSER,  L"Browser");
+        p->hBtnSrcDeckAct   = mkBtn (IDC_BTN_SRC_DECK_ACT, L"Deck (Active)");
+        p->hBtnSrcDeckOth   = mkBtn (IDC_BTN_SRC_DECK_OTH, L"Deck (Other)");
 
-        p->hChkGrouping = CreateWindowW (L"BUTTON", L"Grouping",
-                                         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                         cx, chkY, 72, 18,
-                                         hwnd, (HMENU) IDC_CHK_SAME_GROUPING, nullptr, nullptr);
-        SendMessageW (p->hChkGrouping, BM_SETCHECK, p->filterSameGrouping ? BST_CHECKED : BST_UNCHECKED, 0);
-        SetWindowTheme (p->hChkGrouping, L"", L"");
-        cx += 76;
+        // Search row
+        p->hEditTitle = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                         0, 0, 10, 10, hwnd,
+                                         (HMENU) IDC_EDIT_TITLE, nullptr, nullptr);
+        SendMessageW (p->hEditTitle, EM_SETCUEBANNER, TRUE, (LPARAM) L"Title...");
 
-        p->hChkGenre = CreateWindowW (L"BUTTON", L"Genre",
-                                      WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                      cx, chkY, 58, 18,
-                                      hwnd, (HMENU) IDC_CHK_SAME_GENRE, nullptr, nullptr);
-        SendMessageW (p->hChkGenre, BM_SETCHECK, p->filterSameGenre ? BST_CHECKED : BST_UNCHECKED, 0);
-        SetWindowTheme (p->hChkGenre, L"", L"");
-        cx += 62;
+        p->hEditArtist = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                          WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                          0, 0, 10, 10, hwnd,
+                                          (HMENU) IDC_EDIT_ARTIST, nullptr, nullptr);
+        SendMessageW (p->hEditArtist, EM_SETCUEBANNER, TRUE, (LPARAM) L"Artist...");
 
-        p->hChkOrchestra = CreateWindowW (L"BUTTON", L"Orchestra",
-                                          WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                          cx, chkY, 78, 18,
-                                          hwnd, (HMENU) IDC_CHK_SAME_ORCHESTRA, nullptr, nullptr);
+        p->hBtnSearch = mkBtn (IDC_BTN_SEARCH, L"");
+
+        // Filter checkboxes
+        p->hChkArtist    = mkChk (IDC_CHK_SAME_ARTIST,    L"Artist");
+        p->hChkSinger    = mkChk (IDC_CHK_SAME_SINGER,    L"Singer");
+        p->hChkGrouping  = mkChk (IDC_CHK_SAME_GROUPING,  L"Grouping");
+        p->hChkGenre     = mkChk (IDC_CHK_SAME_GENRE,     L"Genre");
+        p->hChkOrchestra = mkChk (IDC_CHK_SAME_ORCHESTRA, L"Orchestra");
+        p->hChkLabel     = mkChk (IDC_CHK_SAME_LABEL,     L"Label");
+
+        SendMessageW (p->hChkArtist,    BM_SETCHECK, p->filterSameArtist    ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendMessageW (p->hChkSinger,    BM_SETCHECK, p->filterSameSinger    ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendMessageW (p->hChkGrouping,  BM_SETCHECK, p->filterSameGrouping  ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendMessageW (p->hChkGenre,     BM_SETCHECK, p->filterSameGenre     ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW (p->hChkOrchestra, BM_SETCHECK, p->filterSameOrchestra ? BST_CHECKED : BST_UNCHECKED, 0);
-        SetWindowTheme (p->hChkOrchestra, L"", L"");
-        cx += 82;
+        SendMessageW (p->hChkLabel,     BM_SETCHECK, p->filterSameLabel     ? BST_CHECKED : BST_UNCHECKED, 0);
 
-        p->hChkLabel = CreateWindowW (L"BUTTON", L"Label",
-                                      WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                                      cx, chkY, 52, 18,
-                                      hwnd, (HMENU) IDC_CHK_SAME_LABEL, nullptr, nullptr);
-        SendMessageW (p->hChkLabel, BM_SETCHECK, p->filterSameLabel ? BST_CHECKED : BST_UNCHECKED, 0);
-        SetWindowTheme (p->hChkLabel, L"", L"");
-        cx += 56;
-
-        // Year range spinner (label "yr+-" painted at cx, edit at cx+24)
-        int spinEditW = 42;
-        int spinY = (TOP_H - EDIT_H) / 2;
+        // Year range spinner
         p->hEditYearRange = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"5",
                                              WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_CENTER,
-                                             cx + 24, spinY, spinEditW, EDIT_H,
-                                             hwnd, (HMENU) IDC_EDIT_YEAR_RANGE, nullptr, nullptr);
+                                             0, 0, 10, 10, hwnd,
+                                             (HMENU) IDC_EDIT_YEAR_RANGE, nullptr, nullptr);
         p->hSpinYear = CreateWindowW (UPDOWN_CLASS, nullptr,
                                       WS_CHILD | WS_VISIBLE | UDS_SETBUDDYINT | UDS_ALIGNRIGHT
                                       | UDS_ARROWKEYS | UDS_HOTTRACK,
-                                      cx + 24 + spinEditW, spinY, 18, EDIT_H,
-                                      hwnd, (HMENU) IDC_SPIN_YEAR_RANGE, nullptr, nullptr);
+                                      0, 0, 10, 10, hwnd,
+                                      (HMENU) IDC_SPIN_YEAR_RANGE, nullptr, nullptr);
         SendMessageW (p->hSpinYear, UDM_SETBUDDY,   (WPARAM) p->hEditYearRange, 0);
         SendMessageW (p->hSpinYear, UDM_SETRANGE32, 0, 20);
         SendMessageW (p->hSpinYear, UDM_SETPOS32,   0, p->yearRange);
 
-        // ── Left panel ────────────────────────────────────────────────────────
-        const int lx = PAD;
-        const int lw = LEFT_W - PAD;
-        int ly = TOP_H + PAD;
-
-        // Section label "IDENTIFY SONG" is painted — skip 18px
-        ly += 18 + PAD / 2;
-
-        // 3-part segmented source toggle [Browser | Deck (Active) | Deck (Other)]
-        {
-            int segW = lw / 3;
-            int segRemainder = lw - segW * 3;  // distribute extra pixels to last
-            p->hBtnSrcBrowser = CreateWindowW (L"BUTTON", L"Browser",
-                                               WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                               lx, ly, segW, BTN_H,
-                                               hwnd, (HMENU) IDC_BTN_SRC_BROWSER, nullptr, nullptr);
-            p->hBtnSrcDeckAct = CreateWindowW (L"BUTTON", L"Deck (Active)",
-                                               WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                               lx + segW, ly, segW, BTN_H,
-                                               hwnd, (HMENU) IDC_BTN_SRC_DECK_ACT, nullptr, nullptr);
-            p->hBtnSrcDeckOth = CreateWindowW (L"BUTTON", L"Deck (Other)",
-                                               WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                               lx + segW * 2, ly, segW + segRemainder, BTN_H,
-                                               hwnd, (HMENU) IDC_BTN_SRC_DECK_OTH, nullptr, nullptr);
-        }
-        ly += BTN_H + PAD;
-
-        // Search row: Title edit + Artist edit + magnifying glass button
-        {
-            int searchBtnW = 30;  // square magnifying glass button
-            int gap = 4;
-            int editsTotalW = lw - searchBtnW - gap;
-            int titleW = editsTotalW * 55 / 100;
-            int artistW = editsTotalW - titleW - gap;
-
-            p->hEditTitle = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
-                                             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-                                             lx, ly, titleW, EDIT_H,
-                                             hwnd, (HMENU) IDC_EDIT_TITLE, nullptr, nullptr);
-            SendMessageW (p->hEditTitle, EM_SETCUEBANNER, TRUE, (LPARAM) L"Title...");
-
-            p->hEditArtist = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
-                                              WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-                                              lx + titleW + gap, ly, artistW, EDIT_H,
-                                              hwnd, (HMENU) IDC_EDIT_ARTIST, nullptr, nullptr);
-            SendMessageW (p->hEditArtist, EM_SETCUEBANNER, TRUE, (LPARAM) L"Artist...");
-
-            // Magnifying glass search button (vertically centered with edits)
-            p->hBtnSearch = CreateWindowW (L"BUTTON", L"",
-                                           WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                           lx + lw - searchBtnW, ly - (BTN_H - EDIT_H) / 2, searchBtnW, BTN_H,
-                                           hwnd, (HMENU) IDC_BTN_SEARCH, nullptr, nullptr);
-        }
-        ly += EDIT_H + PAD;
-
-        // Section label "CANDIDATES" is painted — skip 18px
-        ly += 18 + PAD / 2;
-
-        // Candidates list — owner-draw fixed, fills remaining height
-        int candListH = DLG_H - ly - PAD;
+        // Candidates list
         p->hCandList = CreateWindowW (L"LISTBOX", nullptr,
                                       WS_CHILD | WS_VISIBLE | WS_VSCROLL
-                                      | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
-                                      lx, ly, lw, candListH,
-                                      hwnd, (HMENU) IDC_CANDIDATES_LIST, nullptr, nullptr);
+                                      | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
+                                      | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+                                      0, 0, 10, 10, hwnd,
+                                      (HMENU) IDC_CANDIDATES_LIST, nullptr, nullptr);
 
-        // ── Right panel ───────────────────────────────────────────────────────
-        const int rx = RIGHT_X;
-        const int rw = RIGHT_W;
-        int ry = TOP_H + PAD;
-
-        // Section label "SIMILAR SONGS" is painted — skip 18px
-        ry += 18 + PAD / 2;
-
-        // "Search in VDJ" button at bottom of right panel
-        int vdjBtnH = BTN_H;
-        int vdjBtnY = DLG_H - PAD - vdjBtnH;
-
-        p->hBtnSearchVdj = CreateWindowW (L"BUTTON", L"Search in VDJ",
-                                          WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                                          rx, vdjBtnY, rw, vdjBtnH,
-                                          hwnd, (HMENU) IDC_BTN_SEARCH_VDJ, nullptr, nullptr);
-
-        // Results list — owner-draw fixed, fills height above VDJ button
-        int resultsH = vdjBtnY - ry - PAD;
+        // Results list
         p->hResultsList = CreateWindowW (L"LISTBOX", nullptr,
                                          WS_CHILD | WS_VISIBLE | WS_VSCROLL
-                                         | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
-                                         rx, ry, rw, resultsH,
-                                         hwnd, (HMENU) IDC_RESULTS_LIST, nullptr, nullptr);
+                                         | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
+                                         | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+                                         0, 0, 10, 10, hwnd,
+                                         (HMENU) IDC_RESULTS_LIST, nullptr, nullptr);
 
-        // ── Apply font to all children ────────────────────────────────────────
+        // Search VDJ button
+        p->hBtnSearchVdj = mkBtn (IDC_BTN_SEARCH_VDJ, L"Search in VDJ");
+
+        // Apply font to all children
         if (p->fontNormal)
         {
             EnumChildWindows (hwnd, [] (HWND child, LPARAM lp) -> BOOL {
@@ -459,7 +534,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             }, (LPARAM) p->fontNormal);
         }
 
-        // ── Start 250ms polling timer ─────────────────────────────────────────
+        // Apply initial layout
+        applyLayout (p, hwnd);
+
+        // Start 250ms polling timer
         SetTimer (hwnd, TIMER_BROWSE_POLL, 250, nullptr);
         return 0;
     }
@@ -470,59 +548,94 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint (hwnd, &ps);
 
-        // Background
         RECT clientR;
         GetClientRect (hwnd, &clientR);
+        const int cw = clientR.right;
+
+        // Background
         fillRect (hdc, clientR, TCol::bg);
 
-        // ── Top bar ───────────────────────────────────────────────────────────
-        RECT topR { 0, 0, DLG_W, TOP_H };
+        // Top bar
+        RECT topR { 0, 0, cw, TOP_H };
         fillRect (hdc, topR, TCol::panel);
 
-        // "TigerTanda" title
-        RECT titleR { 10, 0, 175, TOP_H };
-        if (p) drawText (hdc, titleR, L"TigerTanda", TCol::accentBrt, p->fontTitle,
-                         DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
-        // "yr+-" label for year spinner
-        // cx after 6 checkboxes: 178 + 62 + 62 + 76 + 62 + 82 + 56 = 578
+        // Title
         if (p)
         {
-            RECT yrR { 578, 0, 602, TOP_H };
-            drawText (hdc, yrR, L"yr\u00B1", TCol::textDim, p->fontSmall,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            RECT titleR { 10, 0, 180, TOP_H };
+            drawText (hdc, titleR, L"TigerTanda", TCol::accentBrt, p->fontTitle,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
 
-        // ── Left panel background ─────────────────────────────────────────────
-        RECT leftPanelR { 0, TOP_H, LEFT_W, DLG_H };
-        fillRect (hdc, leftPanelR, TCol::panel);
+        if (!p) { EndPaint (hwnd, &ps); return 0; }
 
-        // Vertical divider
-        RECT divR { LEFT_W, TOP_H, LEFT_W + 1, DLG_H };
-        fillRect (hdc, divR, TCol::cardBorder);
-
-        // ── Section labels ────────────────────────────────────────────────────
-        if (p)
+        // ── WIDE MODE ────────────────────────────────────────────────────────
+        if (p->viewMode == 0)
         {
-            // Left panel labels
+            // Left panel background
+            RECT leftR { 0, TOP_H, LEFT_W, DLG_H };
+            fillRect (hdc, leftR, TCol::panel);
+
+            // Vertical divider
+            RECT divR { LEFT_W, TOP_H, LEFT_W + 1, DLG_H };
+            fillRect (hdc, divR, TCol::cardBorder);
+
+            // Section labels
+            const int lx = PAD;
             {
                 int ly = TOP_H + PAD;
-                RECT r { PAD, ly, LEFT_W - PAD, ly + 18 };
+                RECT r { lx, ly, LEFT_W - PAD, ly + 14 };
                 drawText (hdc, r, L"IDENTIFY SONG", TCol::textDim, p->fontSmall,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                // CANDIDATES label: after section label + toggle + search row
-                ly += 18 + PAD / 2 + BTN_H + PAD + EDIT_H + PAD;
-                r = { PAD, ly, LEFT_W - PAD, ly + 18 };
+
+                // CANDIDATES label: offset by toggle + search + 2 filter rows + year row
+                ly += 14 + 4 + BTN_H + 6 + EDIT_H + 6 + (17 + 4) * 2 + EDIT_H + 6;
+                r = { lx, ly, LEFT_W - PAD, ly + 14 };
                 drawText (hdc, r, L"CANDIDATES", TCol::textDim, p->fontSmall,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
 
-            // Right panel labels
+            // "yr±" label — painted just left of the year edit
+            if (p->hEditYearRange && IsWindowVisible (p->hEditYearRange))
+            {
+                RECT wr;
+                GetWindowRect (p->hEditYearRange, &wr);
+                POINT tl { wr.left, wr.top };
+                ScreenToClient (hwnd, &tl);
+                RECT yrR { lx, tl.y, lx + 26, tl.y + EDIT_H };
+                drawText (hdc, yrR, L"yr\u00B1", TCol::textDim, p->fontSmall,
+                          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+
+            // Right panel label
             {
                 int ry = TOP_H + PAD;
-                RECT r { RIGHT_X, ry, RIGHT_X + RIGHT_W, ry + 18 };
+                RECT r { RIGHT_X, ry, RIGHT_X + RIGHT_W, ry + 14 };
                 drawText (hdc, r, L"SIMILAR SONGS", TCol::textDim, p->fontSmall,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            }
+        }
+        // ── COMPACT MODE ─────────────────────────────────────────────────────
+        else
+        {
+            // Tab strip background
+            RECT tabBgR { 0, TOP_H, DLG_W_COMPACT, TOP_H + TAB_H };
+            fillRect (hdc, tabBgR, TCol::panel);
+
+            // Body background
+            RECT bodyR { 0, TOP_H + TAB_H, DLG_W_COMPACT, DLG_H };
+            fillRect (hdc, bodyR, TCol::bg);
+
+            // "yr±" label in Settings tab
+            if (p->activeTab == 2 && p->hEditYearRange && IsWindowVisible (p->hEditYearRange))
+            {
+                RECT wr;
+                GetWindowRect (p->hEditYearRange, &wr);
+                POINT tl { wr.left, wr.top };
+                ScreenToClient (hwnd, &tl);
+                RECT yrR { PAD, tl.y, PAD + 26, tl.y + EDIT_H };
+                drawText (hdc, yrR, L"yr\u00B1", TCol::textDim, p->fontSmall,
+                          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             }
         }
 
@@ -530,7 +643,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         return 0;
     }
 
-    // ── Timer: browser/deck polling ──────────────────────────────────────────
+    // ── Timer: browser/deck polling + visibility sync ─────────────────────────
     case WM_TIMER:
     {
         if (wParam != TIMER_BROWSE_POLL) break;
@@ -545,9 +658,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
         else
         {
-            // Determine deck index: Active (1) or Other (2)
             int activeDeck = (int) p->vdjGetValue ("get_active_deck");
-            int deckIdx = (p->sourceMode == 1) ? activeDeck : (1 - activeDeck);
+            int deckIdx    = (p->sourceMode == 1) ? activeDeck : (1 - activeDeck);
             char titleQ[32], artistQ[32];
             snprintf (titleQ,  sizeof (titleQ),  "deck%d_title",  deckIdx);
             snprintf (artistQ, sizeof (artistQ), "deck%d_artist", deckIdx);
@@ -560,14 +672,33 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         {
             p->lastSeenTitle  = newTitle;
             p->lastSeenArtist = newArtist;
-
-            // Auto-populate edit boxes
             if (p->hEditTitle)  SetWindowTextW (p->hEditTitle,  newTitle.c_str());
             if (p->hEditArtist) SetWindowTextW (p->hEditArtist, newArtist.c_str());
-
-            // Auto-run identification
             p->runIdentification (newTitle, newArtist);
         }
+
+        // Visibility sync: show/hide with VDJ foreground state
+        if (p->dialogRequestedOpen)
+        {
+            if (isVdjHostForeground())
+            {
+                if (!IsWindowVisible (hwnd))
+                    ShowWindow (hwnd, SW_SHOWNOACTIVATE);
+                SetWindowPos (hwnd, HWND_TOP, 0, 0, 0, 0,
+                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            else if (IsWindowVisible (hwnd))
+            {
+                p->suppressNextHideSync = true;
+                ShowWindow (hwnd, SW_HIDE);
+            }
+        }
+        else if (IsWindowVisible (hwnd))
+        {
+            p->suppressNextHideSync = true;
+            ShowWindow (hwnd, SW_HIDE);
+        }
+
         return 0;
     }
 
@@ -575,21 +706,48 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_COMMAND:
     {
         if (!p) break;
-        int ctrlId   = LOWORD (wParam);
+        int ctrlId    = LOWORD (wParam);
         int notifCode = HIWORD (wParam);
 
         switch (ctrlId)
         {
-        // 3-part segmented toggle
-        case IDC_BTN_SRC_BROWSER:
-            updateSourceToggle (p, 0, hwnd);
+        // Layout toggle
+        case IDC_BTN_LAYOUT_TOGGLE:
+            p->viewMode = (p->viewMode == 0) ? 1 : 0;
+            p->saveSettings();
+            applyLayout (p, hwnd);
             break;
-        case IDC_BTN_SRC_DECK_ACT:
-            updateSourceToggle (p, 1, hwnd);
+
+        // Compact-mode tab buttons
+        case IDC_BTN_TAB_IDENTIFY:
+            p->activeTab = 0;
+            p->saveSettings();
+            applyLayout (p, hwnd);
+            if (p->hBtnTabIdentify) InvalidateRect (p->hBtnTabIdentify, nullptr, FALSE);
+            if (p->hBtnTabResults)  InvalidateRect (p->hBtnTabResults,  nullptr, FALSE);
+            if (p->hBtnTabSettings) InvalidateRect (p->hBtnTabSettings, nullptr, FALSE);
             break;
-        case IDC_BTN_SRC_DECK_OTH:
-            updateSourceToggle (p, 2, hwnd);
+        case IDC_BTN_TAB_RESULTS:
+            p->activeTab = 1;
+            p->saveSettings();
+            applyLayout (p, hwnd);
+            if (p->hBtnTabIdentify) InvalidateRect (p->hBtnTabIdentify, nullptr, FALSE);
+            if (p->hBtnTabResults)  InvalidateRect (p->hBtnTabResults,  nullptr, FALSE);
+            if (p->hBtnTabSettings) InvalidateRect (p->hBtnTabSettings, nullptr, FALSE);
             break;
+        case IDC_BTN_TAB_SETTINGS:
+            p->activeTab = 2;
+            p->saveSettings();
+            applyLayout (p, hwnd);
+            if (p->hBtnTabIdentify) InvalidateRect (p->hBtnTabIdentify, nullptr, FALSE);
+            if (p->hBtnTabResults)  InvalidateRect (p->hBtnTabResults,  nullptr, FALSE);
+            if (p->hBtnTabSettings) InvalidateRect (p->hBtnTabSettings, nullptr, FALSE);
+            break;
+
+        // 3-part segmented source toggle
+        case IDC_BTN_SRC_BROWSER:  updateSourceToggle (p, 0, hwnd); break;
+        case IDC_BTN_SRC_DECK_ACT: updateSourceToggle (p, 1, hwnd); break;
+        case IDC_BTN_SRC_DECK_OTH: updateSourceToggle (p, 2, hwnd); break;
 
         case IDC_BTN_SEARCH:
         {
@@ -605,7 +763,18 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             {
                 int sel = (int) SendMessageW (p->hCandList, LB_GETCURSEL, 0, 0);
                 if (sel >= 0)
+                {
                     p->confirmCandidate (sel);
+                    // In compact mode, auto-switch to Results tab
+                    if (p->viewMode == 1 && p->activeTab != 1)
+                    {
+                        p->activeTab = 1;
+                        applyLayout (p, hwnd);
+                        if (p->hBtnTabIdentify) InvalidateRect (p->hBtnTabIdentify, nullptr, FALSE);
+                        if (p->hBtnTabResults)  InvalidateRect (p->hBtnTabResults,  nullptr, FALSE);
+                        if (p->hBtnTabSettings) InvalidateRect (p->hBtnTabSettings, nullptr, FALSE);
+                    }
+                }
             }
             break;
 
@@ -614,31 +783,26 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
-
         case IDC_CHK_SAME_SINGER:
             p->filterSameSinger = SendMessageW (p->hChkSinger, BM_GETCHECK, 0, 0) == BST_CHECKED;
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
-
         case IDC_CHK_SAME_GROUPING:
             p->filterSameGrouping = SendMessageW (p->hChkGrouping, BM_GETCHECK, 0, 0) == BST_CHECKED;
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
-
         case IDC_CHK_SAME_GENRE:
             p->filterSameGenre = SendMessageW (p->hChkGenre, BM_GETCHECK, 0, 0) == BST_CHECKED;
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
-
         case IDC_CHK_SAME_ORCHESTRA:
             p->filterSameOrchestra = SendMessageW (p->hChkOrchestra, BM_GETCHECK, 0, 0) == BST_CHECKED;
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
-
         case IDC_CHK_SAME_LABEL:
             p->filterSameLabel = SendMessageW (p->hChkLabel, BM_GETCHECK, 0, 0) == BST_CHECKED;
             p->saveSettings();
@@ -647,14 +811,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         case IDC_BTN_SEARCH_VDJ:
         {
-            // Search for selected result in VDJ
             int sel = (int) SendMessageW (p->hResultsList, LB_GETCURSEL, 0, 0);
             if (sel >= 0 && sel < (int) p->results.size())
             {
                 const TgRecord& rec = p->results[sel];
                 std::wstring query = rec.title;
-                if (!rec.bandleader.empty())
-                    query += L" " + rec.bandleader;
+                if (!rec.bandleader.empty()) query += L" " + rec.bandleader;
                 std::string cmd = "search \"" + toUtf8 (query) + "\"";
                 p->vdjSend (cmd);
             }
@@ -666,9 +828,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             break;
 
         case IDC_BTN_CLOSE:
-            p->dialogRequestedOpen = false;
-            p->vdjSend ("effect_show_gui off");
+            p->dialogRequestedOpen  = false;
             p->suppressNextHideSync = true;
+            p->vdjSend ("effect_show_gui off");
             ShowWindow (hwnd, SW_HIDE);
             break;
         }
@@ -683,15 +845,15 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (di->CtlType == ODT_BUTTON)
         {
-            // 3-part segmented toggle buttons
+            // Source toggle segments
             if (di->CtlID == IDC_BTN_SRC_BROWSER)
             {
-                drawSegmentButton (di, L"Browser", p->sourceMode == 0, p->fontSmall, true, false);
+                drawSegmentButton (di, L"Browser",      p->sourceMode == 0, p->fontSmall, true,  false);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_SRC_DECK_ACT)
             {
-                drawSegmentButton (di, L"Deck (Active)", p->sourceMode == 1, p->fontSmall, false, false);
+                drawSegmentButton (di, L"Deck (Active)",p->sourceMode == 1, p->fontSmall, false, false);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_SRC_DECK_OTH)
@@ -700,58 +862,65 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 return TRUE;
             }
 
+            // Compact-mode tab buttons
+            if (di->CtlID == IDC_BTN_TAB_IDENTIFY)
+            {
+                drawTabButton (di, L"Identify", p->activeTab == 0, p->fontSmall, true,  false);
+                return TRUE;
+            }
+            if (di->CtlID == IDC_BTN_TAB_RESULTS)
+            {
+                drawTabButton (di, L"Results",  p->activeTab == 1, p->fontSmall, false, false);
+                return TRUE;
+            }
+            if (di->CtlID == IDC_BTN_TAB_SETTINGS)
+            {
+                drawTabButton (di, L"Settings", p->activeTab == 2, p->fontSmall, false, true);
+                return TRUE;
+            }
+
+            // Magnifying glass search button
+            if (di->CtlID == IDC_BTN_SEARCH)
+            {
+                COLORREF bg = RGB (35, 50, 70);
+                bool pressed = (di->itemState & ODS_SELECTED) != 0;
+                fillRect (di->hDC, di->rcItem, pressed ? TCol::buttonHover : bg);
+
+                HPEN pen    = CreatePen (PS_SOLID, 1, TCol::cardBorder);
+                HPEN oldPen = (HPEN) SelectObject (di->hDC, pen);
+                RECT r = di->rcItem;
+                MoveToEx (di->hDC, r.left,     r.bottom - 1, nullptr);
+                LineTo   (di->hDC, r.right - 1, r.bottom - 1);
+                LineTo   (di->hDC, r.right - 1, r.top);
+                LineTo   (di->hDC, r.left,       r.top);
+                LineTo   (di->hDC, r.left,       r.bottom - 1);
+                SelectObject (di->hDC, oldPen);
+                DeleteObject (pen);
+
+                int cx = (di->rcItem.left + di->rcItem.right)  / 2;
+                int cy = (di->rcItem.top  + di->rcItem.bottom) / 2;
+                HPEN gp  = CreatePen (PS_SOLID, 2, TCol::textBright);
+                HPEN old = (HPEN) SelectObject (di->hDC, gp);
+                HBRUSH obr = (HBRUSH) SelectObject (di->hDC, GetStockObject (NULL_BRUSH));
+                Ellipse (di->hDC, cx - 7, cy - 7, cx + 3, cy + 3);
+                MoveToEx (di->hDC, cx + 1, cy + 1, nullptr);
+                LineTo   (di->hDC, cx + 5, cy + 5);
+                SelectObject (di->hDC, old);
+                SelectObject (di->hDC, obr);
+                DeleteObject (gp);
+                return TRUE;
+            }
+
+            // Generic button styling
             wchar_t text[128] = {};
             GetWindowTextW (di->hwndItem, text, 128);
             std::wstring label (text);
 
-            COLORREF bg = TCol::buttonBg;
-            COLORREF fg = TCol::textNormal;
-
-            if (di->CtlID == IDC_BTN_SEARCH)
-            {
-                // Magnifying glass button - draw custom
-                bg = RGB(35, 50, 70); fg = TCol::textBright;
-                bool pressed = (di->itemState & ODS_SELECTED) != 0;
-                COLORREF drawBg = pressed ? TCol::buttonHover : bg;
-                fillRect (di->hDC, di->rcItem, drawBg);
-
-                // Draw border
-                HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-                HPEN oldPen = (HPEN) SelectObject (di->hDC, pen);
-                RECT r = di->rcItem;
-                MoveToEx (di->hDC, r.left, r.bottom - 1, nullptr);
-                LineTo (di->hDC, r.right - 1, r.bottom - 1);
-                LineTo (di->hDC, r.right - 1, r.top);
-                LineTo (di->hDC, r.left, r.top);
-                LineTo (di->hDC, r.left, r.bottom - 1);
-                SelectObject (di->hDC, oldPen);
-                DeleteObject (pen);
-
-                // Draw magnifying glass using Unicode U+2315 or simple circle+line via GDI
-                // Use a simple circle + line approach
-                int cx = (di->rcItem.left + di->rcItem.right) / 2;
-                int cy = (di->rcItem.top + di->rcItem.bottom) / 2;
-                int radius = 5;
-
-                HPEN glassPen = CreatePen (PS_SOLID, 2, fg);
-                HPEN oldP = (HPEN) SelectObject (di->hDC, glassPen);
-                HBRUSH oldBr = (HBRUSH) SelectObject (di->hDC, GetStockObject (NULL_BRUSH));
-                Ellipse (di->hDC, cx - radius - 2, cy - radius - 2, cx + radius - 2, cy + radius - 2);
-                // Handle (line from bottom-right of circle)
-                MoveToEx (di->hDC, cx + radius - 4, cy + radius - 4, nullptr);
-                LineTo (di->hDC, cx + radius + 2, cy + radius + 2);
-                SelectObject (di->hDC, oldP);
-                SelectObject (di->hDC, oldBr);
-                DeleteObject (glassPen);
-
-                return TRUE;
-            }
-            else if (di->CtlID == IDC_BTN_SEARCH_VDJ)
-                { bg = RGB(35, 50, 70); fg = TCol::textBright; }
-            else if (di->CtlID == IDC_BTN_RESET)
-                { bg = RGB(60, 28, 28); fg = TCol::textNormal; }
-            else if (di->CtlID == IDC_BTN_CLOSE)
-                { bg = RGB(70, 28, 28); fg = TCol::textBright; }
+            COLORREF bg = TCol::buttonBg, fg = TCol::textNormal;
+            if      (di->CtlID == IDC_BTN_SEARCH_VDJ)    { bg = RGB (35, 50, 70);  fg = TCol::textBright; }
+            else if (di->CtlID == IDC_BTN_RESET)          { bg = RGB (60, 28, 28);  fg = TCol::textNormal; }
+            else if (di->CtlID == IDC_BTN_CLOSE)          { bg = RGB (70, 28, 28);  fg = TCol::textBright; }
+            else if (di->CtlID == IDC_BTN_LAYOUT_TOGGLE)  { bg = TCol::buttonBg;    fg = TCol::accentBrt; }
 
             drawOwnerButton (di, label, bg, fg, p->fontNormal);
             return TRUE;
@@ -761,96 +930,84 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (di->CtlID == IDC_CANDIDATES_LIST && di->itemID != (UINT) -1)
         {
             if ((int) di->itemID >= (int) p->candidates.size()) break;
-            const TgMatchResult& mr = p->candidates[di->itemID];
-            const TgRecord& rec = mr.record;
+            const TgMatchResult& mr  = p->candidates[di->itemID];
+            const TgRecord&      rec = mr.record;
 
-            HDC hdc = di->hDC;
-            RECT r = di->rcItem;
-            bool sel = (di->itemState & ODS_SELECTED) != 0;
+            HDC  hdc = di->hDC;
+            RECT r   = di->rcItem;
+            bool sel       = (di->itemState & ODS_SELECTED) != 0;
             bool confirmed = ((int) di->itemID == p->confirmedIdx);
 
-            COLORREF itemBg = confirmed ? TCol::matchSel
-                            : sel       ? TCol::matchSel
-                                       : TCol::panel;
-            fillRect (hdc, r, itemBg);
+            fillRect (hdc, r, (sel || confirmed) ? TCol::matchSel : TCol::panel);
 
-            // Score badge (40x14)
+            // Score badge
             wchar_t scoreBuf[16];
             swprintf_s (scoreBuf, L"%.0f%%", mr.score);
-            int badgeW = 40, badgeH = 14;
-            int bx = r.left + 4;
-            int by = r.top + (CAND_ITEM_H - badgeH) / 2;
-            drawBadge (hdc, bx, by, badgeW, badgeH, scoreBuf,
-                       TCol::scoreBg (mr.score), TCol::scoreColor (mr.score), p->fontSmall);
-
-            // Title (bold)
-            int tx = bx + badgeW + 6;
-            RECT titleR { tx, r.top + 4, r.right - 4, r.top + 18 };
-            drawText (hdc, titleR, rec.title, TCol::textBright, p->fontBold,
-                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-            // Detail: Bandleader . Singer . Year
-            std::wstring detail = rec.bandleader;
-            if (!rec.singer.empty()) detail += L"  \u00B7  " + rec.singer;
-            if (!rec.year.empty())   detail += L"  \u00B7  " + rec.year;
-            RECT detR { tx, r.top + 19, r.right - 4, r.bottom - 3 };
-            drawText (hdc, detR, detail, TCol::textDim, p->fontSmall,
-                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-            // Confirmed marker
-            if (confirmed)
+            const int badgeW = 38, badgeH = 13;
+            const int bx = r.left + 4;
+            const int by = r.top + (CAND_ITEM_H - badgeH) / 2;
             {
-                RECT markR { r.right - 20, r.top, r.right, r.bottom };
-                drawText (hdc, markR, L"\u2714", TCol::good, p->fontBold,
+                RECT br { bx, by, bx + badgeW, by + badgeH };
+                fillRect (hdc, br, TCol::scoreBg (mr.score));
+                drawText (hdc, br, scoreBuf, TCol::scoreColor (mr.score), p->fontSmall,
                           DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             }
 
-            // Bottom separator
+            int tx = bx + badgeW + 5;
+            RECT titleR  { tx,     r.top + 3,     r.right - 4, r.top + 14 };
+            RECT detailR { tx,     r.top + 14,    r.right - 4, r.bottom - 2 };
+            drawText (hdc, titleR, rec.title, TCol::textBright, p->fontBold,
+                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+            std::wstring det = rec.bandleader;
+            if (!rec.singer.empty()) det += L"  \u00B7  " + rec.singer;
+            if (!rec.year.empty())   det += L"  \u00B7  " + rec.year;
+            drawText (hdc, detailR, det, TCol::textDim, p->fontSmall,
+                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+            if (confirmed)
+            {
+                RECT ck { r.right - 18, r.top, r.right, r.bottom };
+                drawText (hdc, ck, L"\u2714", TCol::good, p->fontBold,
+                          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
             HPEN old = (HPEN) SelectObject (hdc, pen);
             MoveToEx (hdc, r.left, r.bottom - 1, nullptr);
             LineTo   (hdc, r.right, r.bottom - 1);
             SelectObject (hdc, old);
             DeleteObject (pen);
-
             return TRUE;
         }
 
-        // ── Owner-draw results list (no row numbers) ─────────────────────────
+        // ── Owner-draw results list ───────────────────────────────────────────
         if (di->CtlID == IDC_RESULTS_LIST && di->itemID != (UINT) -1)
         {
             if ((int) di->itemID >= (int) p->results.size()) break;
             const TgRecord& rec = p->results[di->itemID];
 
-            HDC hdc = di->hDC;
-            RECT r = di->rcItem;
-            bool sel = (di->itemState & ODS_SELECTED) != 0;
+            HDC  hdc  = di->hDC;
+            RECT r    = di->rcItem;
+            bool sel  = (di->itemState & ODS_SELECTED) != 0;
             bool even = (di->itemID % 2 == 0);
 
-            COLORREF itemBg = sel  ? TCol::matchSel
-                            : even ? TCol::card
-                                   : TCol::panel;
-            fillRect (hdc, r, itemBg);
+            fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
-            int tx = r.left + 6;
-            int availW = r.right - tx - 4;
+            int tx = r.left + 5;
+            int avW = r.right - tx - 4;
 
-            // Measure title width with fontBold (cap at 55% of available)
             RECT tm = { 0, 0, 9999, 100 };
             HFONT oldFont = (HFONT) SelectObject (hdc, p->fontBold);
             DrawTextW (hdc, rec.title.c_str(), -1, &tm, DT_CALCRECT | DT_SINGLELINE);
             SelectObject (hdc, oldFont);
-            int titleW = (int) (tm.right - tm.left);
-            int maxTitleW = availW * 55 / 100;
-            if (titleW > maxTitleW) titleW = maxTitleW;
+            int titleW = std::min ((int)(tm.right - tm.left), avW * 55 / 100);
 
-            // Title (bold, left-aligned)
             RECT titleR { tx, r.top, tx + titleW, r.bottom };
             drawText (hdc, titleR, rec.title, TCol::textBright, p->fontBold,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-            // Metadata on same line: Bandleader . Singer . Genre . Year
-            int metaX = tx + titleW + 12;
+            int metaX = tx + titleW + 10;
             std::wstring meta;
             if (!rec.bandleader.empty()) meta += rec.bandleader;
             if (!rec.singer.empty())     { if (!meta.empty()) meta += L"  \u00B7  "; meta += rec.singer; }
@@ -861,14 +1018,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             drawText (hdc, metaR, meta, TCol::textDim, p->fontSmall,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-            // Bottom separator
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
             HPEN old = (HPEN) SelectObject (hdc, pen);
             MoveToEx (hdc, r.left, r.bottom - 1, nullptr);
             LineTo   (hdc, r.right, r.bottom - 1);
             SelectObject (hdc, old);
             DeleteObject (pen);
-
             return TRUE;
         }
 
@@ -880,12 +1035,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     {
         auto* mi = reinterpret_cast<MEASUREITEMSTRUCT*> (lParam);
         if (!mi) break;
-        if (mi->CtlID == IDC_CANDIDATES_LIST) { mi->itemHeight = CAND_ITEM_H; return TRUE; }
-        if (mi->CtlID == IDC_RESULTS_LIST)    { mi->itemHeight = RESULT_ITEM_H; return TRUE; }
+        if (mi->CtlID == IDC_CANDIDATES_LIST) { mi->itemHeight = CAND_ITEM_H;    return TRUE; }
+        if (mi->CtlID == IDC_RESULTS_LIST)    { mi->itemHeight = RESULT_ITEM_H;  return TRUE; }
         break;
     }
 
-    // ── Updown spinner (year range) ──────────────────────────────────────────
+    // ── Year range spinner ───────────────────────────────────────────────────
     case WM_NOTIFY:
     {
         auto* nm = reinterpret_cast<NMHDR*> (lParam);
@@ -893,37 +1048,35 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (nm->idFrom == IDC_SPIN_YEAR_RANGE && nm->code == UDN_DELTAPOS)
         {
             auto* ud = reinterpret_cast<NMUPDOWN*> (lParam);
-            int newVal = ud->iPos + ud->iDelta;
-            if (newVal < 0)  newVal = 0;
-            if (newVal > 20) newVal = 20;
-            p->yearRange = newVal;
+            int nv = ud->iPos + ud->iDelta;
+            if (nv < 0)  nv = 0;
+            if (nv > 20) nv = 20;
+            p->yearRange = nv;
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
         }
         break;
     }
 
-    // ── Colour checkboxes / buttons ──────────────────────────────────────────
+    // ── Checkbox / edit colours ──────────────────────────────────────────────
     case WM_CTLCOLORBTN:
     {
         HDC hdc = (HDC) wParam;
-        SetBkColor (hdc, TCol::panel);
+        SetBkColor   (hdc, TCol::panel);
         SetTextColor (hdc, TCol::textNormal);
         return (LRESULT) (p ? p->panelBrush : GetStockObject (NULL_BRUSH));
     }
-
     case WM_CTLCOLOREDIT:
     {
         HDC hdc = (HDC) wParam;
-        SetBkColor (hdc, TCol::card);
+        SetBkColor   (hdc, TCol::card);
         SetTextColor (hdc, TCol::textBright);
         return (LRESULT) (p ? p->cardBrush : GetStockObject (NULL_BRUSH));
     }
-
     case WM_CTLCOLORLISTBOX:
     {
         HDC hdc = (HDC) wParam;
-        SetBkColor (hdc, TCol::panel);
+        SetBkColor   (hdc, TCol::panel);
         SetTextColor (hdc, TCol::textNormal);
         return (LRESULT) (p ? p->panelBrush : GetStockObject (NULL_BRUSH));
     }
@@ -937,16 +1090,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  UI helper implementations (called from matching code)
+//  UI helper implementations
 // ─────────────────────────────────────────────────────────────────────────────
-
-void TigerTandaPlugin::repaintRefCard()
-{
-    if (!hDlg) return;
-    // Invalidate the lower portion of the left panel where the ref card lives
-    RECT r { 0, TOP_H + 200, LEFT_W, DLG_H };
-    InvalidateRect (hDlg, &r, FALSE);
-}
 
 void TigerTandaPlugin::repaintTopBar()
 {

@@ -55,6 +55,14 @@ HRESULT VDJ_API TigerTandaPlugin::OnLoad()
     if (metadataFolder.empty())
         metadataFolder = dllDir.wstring();
     detectMetadataFolder();
+    // If metadata.csv still not found (e.g. old settings pointed at a 'metadata/' subdir),
+    // fall back to the DLL's own directory.
+    {
+        std::error_code ec;
+        fs::path csvTest = fs::path (metadataFolder) / L"metadata.csv";
+        if (!fs::is_regular_file (csvTest, ec))
+            metadataFolder = dllDir.wstring();
+    }
     loadMetadata();
 
     DeclareParameterButton (&paramSearch, PID_SEARCH, "Search",       "Search");
@@ -87,8 +95,8 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
     {
         dialogRequestedOpen = true;
         suppressNextHideSync = false;
-        ShowWindow (hDlg, SW_SHOW);
-        SetWindowPos (hDlg, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        ShowWindow (hDlg, SW_SHOWNOACTIVATE);
+        SetWindowPos (hDlg, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
         pluginInterface->Type = VDJINTERFACE_DIALOG;
         pluginInterface->hWnd = hDlg;
@@ -102,23 +110,25 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
     if (GetInfo ("get hwnd", &hwndVal) == S_OK && hwndVal != 0)
         parentHwnd = (HWND) (intptr_t) hwndVal;
 
+    const int initW = (viewMode == 0) ? DLG_W_WIDE : DLG_W_COMPACT;
+
     int posX, posY;
     if (parentHwnd)
     {
         RECT pr;
         GetWindowRect (parentHwnd, &pr);
-        posX = pr.left + ((pr.right - pr.left) - DLG_W) / 2;
+        posX = pr.left + ((pr.right - pr.left) - initW) / 2;
         posY = pr.top  + ((pr.bottom - pr.top) - DLG_H) / 2;
     }
     else
     {
-        posX = (GetSystemMetrics (SM_CXSCREEN) - DLG_W) / 2;
+        posX = (GetSystemMetrics (SM_CXSCREEN) - initW) / 2;
         posY = (GetSystemMetrics (SM_CYSCREEN) - DLG_H) / 2;
     }
 
     hDlg = CreateWindowExW (WS_EX_TOOLWINDOW, WND_CLASS, L"TigerTanda",
                             WS_POPUP | WS_CLIPCHILDREN | WS_VISIBLE,
-                            posX, posY, DLG_W, DLG_H,
+                            posX, posY, initW, DLG_H,
                             parentHwnd, nullptr, hInstance, this);
 
     if (hDlg)
@@ -269,6 +279,16 @@ void TigerTandaPlugin::loadSettings()
                 if (yearRange < 0) yearRange = 0;
                 if (yearRange > 20) yearRange = 20;
             }
+            else if (key == "viewMode")
+            {
+                viewMode = std::stoi (val);
+                if (viewMode < 0 || viewMode > 1) viewMode = 0;
+            }
+            else if (key == "activeTab")
+            {
+                activeTab = std::stoi (val);
+                if (activeTab < 0 || activeTab > 2) activeTab = 0;
+            }
         }
         catch (...) {}
     }
@@ -290,6 +310,8 @@ void TigerTandaPlugin::saveSettings()
     out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
     out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
     out << "yearRange=" << yearRange << "\n";
+    out << "viewMode=" << viewMode << "\n";
+    out << "activeTab=" << activeTab << "\n";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

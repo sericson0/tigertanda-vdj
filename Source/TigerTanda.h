@@ -39,6 +39,10 @@ enum CtrlId
     IDC_BTN_CLOSE          = 2701,
     IDC_BTN_RESET          = 2702,
     IDC_BTN_SEARCH_VDJ     = 2703,
+    IDC_BTN_LAYOUT_TOGGLE  = 2801,
+    IDC_BTN_TAB_IDENTIFY   = 2802,
+    IDC_BTN_TAB_RESULTS    = 2803,
+    IDC_BTN_TAB_SETTINGS   = 2804,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,20 +55,22 @@ inline constexpr UINT_PTR TIMER_BROWSE_POLL = 1;
 //  Layout constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_W         = 920;
-inline constexpr int DLG_H         = 580;
-inline constexpr int TOP_H         = 44;
-inline constexpr int LEFT_W        = 310;
-inline constexpr int PAD           = 10;
-inline constexpr int BTN_H         = 28;
-inline constexpr int EDIT_H        = 22;
-inline constexpr int CAND_ITEM_H   = 36;
-inline constexpr int RESULT_ITEM_H = 28;
-inline constexpr int REF_CARD_H    = 72;
+inline constexpr int DLG_H          = 420;
+inline constexpr int DLG_W_WIDE     = 700;
+inline constexpr int DLG_W_COMPACT  = 360;
+inline constexpr int DLG_W          = DLG_W_WIDE;   // alias for wide-mode paint code
+inline constexpr int TOP_H          = 36;
+inline constexpr int TAB_H          = 28;            // compact mode tab-strip height
+inline constexpr int LEFT_W         = 270;
+inline constexpr int PAD            = 8;
+inline constexpr int BTN_H          = 24;
+inline constexpr int EDIT_H         = 18;
+inline constexpr int CAND_ITEM_H    = 26;
+inline constexpr int RESULT_ITEM_H  = 22;
 
-// Right panel x-origin
+// Right panel x-origin / width (wide mode)
 inline constexpr int RIGHT_X = LEFT_W + PAD * 2;
-inline constexpr int RIGHT_W = DLG_W - RIGHT_X - PAD;
+inline constexpr int RIGHT_W = DLG_W_WIDE - RIGHT_X - PAD;
 
 // Window class name
 inline constexpr const wchar_t* WND_CLASS = L"TigerTandaVdjDialog";
@@ -103,7 +109,7 @@ public:
     void loadMetadata();
 
     // UI helpers (TigerTandaUI.cpp)
-    void repaintRefCard();
+    void repaintRefCard() {}   // removed – kept as no-op for call-site compat
     void repaintTopBar();
 
     // Parameter IDs for VDJ parameter panel
@@ -130,6 +136,10 @@ public:
     // ── Source mode ─────────────────────────────────────────────────────────
     int  sourceMode = 0;           // 0=Browser, 1=Deck(Active), 2=Deck(Other)
 
+    // ── View mode ────────────────────────────────────────────────────────────
+    int  viewMode  = 0;  // 0 = wide (two-panel), 1 = compact (tabbed)
+    int  activeTab = 0;  // compact mode: 0=Identify, 1=Results, 2=Settings
+
     // ── Browser/deck polling ─────────────────────────────────────────────────
     std::wstring lastSeenTitle;
     std::wstring lastSeenArtist;
@@ -139,27 +149,31 @@ public:
     fs::path     settingsPath;
 
     // ── Window handles ───────────────────────────────────────────────────────
-    HWND hDlg           = nullptr;
-    HWND hEditTitle     = nullptr;
-    HWND hEditArtist    = nullptr;
-    HWND hBtnSearch     = nullptr;
-    HWND hCandList      = nullptr;
-    HWND hChkArtist     = nullptr;
-    HWND hChkSinger     = nullptr;
-    HWND hChkGrouping   = nullptr;
-    HWND hChkGenre      = nullptr;
-    HWND hChkOrchestra  = nullptr;
-    HWND hChkLabel      = nullptr;
-    HWND hEditYearRange = nullptr;
-    HWND hSpinYear      = nullptr;
-    HWND hResultsList   = nullptr;
-    HWND hBtnSrcToggle  = nullptr;
-    HWND hBtnSrcBrowser = nullptr;
-    HWND hBtnSrcDeckAct = nullptr;
-    HWND hBtnSrcDeckOth = nullptr;
-    HWND hBtnClose      = nullptr;
-    HWND hBtnReset      = nullptr;
-    HWND hBtnSearchVdj  = nullptr;
+    HWND hDlg              = nullptr;
+    HWND hEditTitle        = nullptr;
+    HWND hEditArtist       = nullptr;
+    HWND hBtnSearch        = nullptr;
+    HWND hCandList         = nullptr;
+    HWND hChkArtist        = nullptr;
+    HWND hChkSinger        = nullptr;
+    HWND hChkGrouping      = nullptr;
+    HWND hChkGenre         = nullptr;
+    HWND hChkOrchestra     = nullptr;
+    HWND hChkLabel         = nullptr;
+    HWND hEditYearRange    = nullptr;
+    HWND hSpinYear         = nullptr;
+    HWND hResultsList      = nullptr;
+    HWND hBtnSrcToggle     = nullptr;
+    HWND hBtnSrcBrowser    = nullptr;
+    HWND hBtnSrcDeckAct    = nullptr;
+    HWND hBtnSrcDeckOth    = nullptr;
+    HWND hBtnClose         = nullptr;
+    HWND hBtnReset         = nullptr;
+    HWND hBtnSearchVdj     = nullptr;
+    HWND hBtnLayoutToggle  = nullptr;
+    HWND hBtnTabIdentify   = nullptr;
+    HWND hBtnTabResults    = nullptr;
+    HWND hBtnTabSettings   = nullptr;
 
     // ── GDI resources ────────────────────────────────────────────────────────
     HFONT fontNormal   = nullptr;
@@ -169,8 +183,7 @@ public:
     HBRUSH panelBrush  = nullptr;
     HBRUSH cardBrush   = nullptr;
 
-
-    bool dialogRequestedOpen = true;
+    bool dialogRequestedOpen  = true;
     bool suppressNextHideSync = false;
 };
 
