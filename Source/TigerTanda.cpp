@@ -260,7 +260,10 @@ void TigerTandaPlugin::loadSettings()
             if (key == "metadataFolder")
                 metadataFolder = toWide (val);
             else if (key == "sourceMode")
+            {
                 sourceMode = std::stoi (val);
+                if (sourceMode < 0 || sourceMode > 4) sourceMode = 3; // default Active
+            }
             else if (key == "sameArtist")
                 filterSameArtist = (val != "0");
             else if (key == "sameSinger")

@@ -20,8 +20,8 @@ enum CtrlId
 {
     IDC_BTN_SRC_TOGGLE     = 2001,
     IDC_BTN_SRC_BROWSER    = 2002,
-    IDC_BTN_SRC_DECK_ACT   = 2003,
-    IDC_BTN_SRC_DECK_OTH   = 2004,
+    IDC_BTN_SRC_DECK       = 2003,  // "Deck" button — click opens popup menu
+
     IDC_EDIT_TITLE         = 2101,
     IDC_EDIT_ARTIST        = 2102,
     IDC_BTN_SEARCH         = 2103,
@@ -136,7 +136,7 @@ public:
     int  yearRange           = 5;   // 0 = disabled
 
     // ── Source mode ─────────────────────────────────────────────────────────
-    int  sourceMode = 0;           // 0=Browser, 1=Deck(Active), 2=Deck(Other)
+    int  sourceMode = 3;           // 0=Browser, 1=Left deck, 2=Right deck, 3=Active deck, 4=Inactive deck
 
     // ── View mode ────────────────────────────────────────────────────────────
     int  viewMode  = 0;  // 0 = wide (two-panel), 1 = compact (tabbed)
@@ -165,10 +165,8 @@ public:
     HWND hEditYearRange    = nullptr;
     HWND hSpinYear         = nullptr;
     HWND hResultsList      = nullptr;
-    HWND hBtnSrcToggle     = nullptr;
     HWND hBtnSrcBrowser    = nullptr;
-    HWND hBtnSrcDeckAct    = nullptr;
-    HWND hBtnSrcDeckOth    = nullptr;
+    HWND hBtnSrcDeck       = nullptr;
     HWND hBtnClose         = nullptr;
     HWND hBtnReset         = nullptr;
     HWND hBtnSearchVdj     = nullptr;

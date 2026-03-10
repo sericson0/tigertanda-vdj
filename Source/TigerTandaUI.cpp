@@ -74,68 +74,30 @@ static void drawOwnerButton (const DRAWITEMSTRUCT* di, const std::wstring& label
     drawText (hdc, r, label, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
-// Draw a segment of the 3-part source toggle
-static void drawSegmentButton (const DRAWITEMSTRUCT* di, const std::wstring& label,
-                               bool isActive, HFONT font, bool isLeft, bool isRight)
+// Draw a flat text-only toggle button — orange+bold when active, gray+normal otherwise
+// Matches the Hisstory Analyzer/Spectrogram toggle style: no background fill change, just text
+static void drawTextToggle (const DRAWITEMSTRUCT* di, const std::wstring& label,
+                            bool isActive, HFONT fontNormal, HFONT fontBold,
+                            COLORREF bgColor = TCol::panel)
 {
     HDC hdc = di->hDC;
     RECT r = di->rcItem;
     bool pressed = (di->itemState & ODS_SELECTED) != 0;
 
-    COLORREF bg = isActive ? TCol::accent
-                : pressed  ? TCol::buttonHover
-                           : TCol::buttonBg;
-    COLORREF fg = isActive ? TCol::textBright : TCol::textDim;
+    fillRect (hdc, r, bgColor);
 
-    fillRect (hdc, r, bg);
-
-    HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-    HPEN oldPen = (HPEN) SelectObject (hdc, pen);
-    MoveToEx (hdc, r.left,  r.top,        nullptr);
-    LineTo   (hdc, r.right, r.top);
-    MoveToEx (hdc, r.left,  r.bottom - 1, nullptr);
-    LineTo   (hdc, r.right, r.bottom - 1);
-    if (isLeft)  { MoveToEx (hdc, r.left,      r.top, nullptr); LineTo (hdc, r.left,      r.bottom); }
-    if (isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
-    if (!isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
-    SelectObject (hdc, oldPen);
-    DeleteObject (pen);
-
+    COLORREF fg = (isActive || pressed) ? TCol::accentBrt : TCol::textDim;
+    HFONT font  = (isActive || pressed) ? fontBold : fontNormal;
     drawText (hdc, r, label, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-}
 
-// Draw a tab button (3-way tab strip in compact mode)
-static void drawTabButton (const DRAWITEMSTRUCT* di, const std::wstring& label,
-                           bool isActive, HFONT font, bool isLeft, bool isRight)
-{
-    HDC hdc = di->hDC;
-    RECT r = di->rcItem;
-    bool pressed = (di->itemState & ODS_SELECTED) != 0;
-
-    COLORREF bg = isActive ? TCol::card
-                : pressed  ? TCol::buttonHover
-                           : TCol::panel;
-    COLORREF fg = isActive ? TCol::accentBrt : TCol::textDim;
-
-    fillRect (hdc, r, bg);
-
-    HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-    HPEN oldPen = (HPEN) SelectObject (hdc, pen);
-    HPEN accentPen = CreatePen (PS_SOLID, 2, isActive ? TCol::accent : TCol::cardBorder);
-    SelectObject (hdc, accentPen);
-    MoveToEx (hdc, r.left,  r.top, nullptr);
-    LineTo   (hdc, r.right, r.top);
-    SelectObject (hdc, pen);
-    DeleteObject (accentPen);
-    MoveToEx (hdc, r.left,  r.bottom - 1, nullptr);
+    // Accent bottom line when active
+    HPEN pen = CreatePen (PS_SOLID, isActive ? 2 : 1,
+                          isActive ? TCol::accent : TCol::cardBorder);
+    HPEN old = (HPEN) SelectObject (hdc, pen);
+    MoveToEx (hdc, r.left, r.bottom - 1, nullptr);
     LineTo   (hdc, r.right, r.bottom - 1);
-    if (isLeft)  { MoveToEx (hdc, r.left,      r.top, nullptr); LineTo (hdc, r.left,      r.bottom); }
-    if (isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
-    if (!isRight) { MoveToEx (hdc, r.right - 1, r.top, nullptr); LineTo (hdc, r.right - 1, r.bottom); }
-    SelectObject (hdc, oldPen);
+    SelectObject (hdc, old);
     DeleteObject (pen);
-
-    drawText (hdc, r, label, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 // Draw collapse/expand arrow glyph (ported from hisstory-vst)
@@ -265,13 +227,16 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     // Layout toggle (arrow glyph button — small square)
     MoveWindow (p->hBtnLayoutToggle, cw - 28 - 4 - 26, topY, 26, BTN_H, FALSE);
 
-    // ── Tab strip (compact only) ────────────────────────────────────────────
+    // ── Tab strip (compact only) — lives in top bar alongside Close/Toggle ──
     if (p->viewMode == 1)
     {
-        const int tabW = DLG_W_COMPACT / 3;
-        MoveWindow (p->hBtnTabIdentify, 0,       TOP_H, tabW,                     TAB_H, FALSE);
-        MoveWindow (p->hBtnTabResults,  tabW,    TOP_H, tabW,                     TAB_H, FALSE);
-        MoveWindow (p->hBtnTabSettings, tabW*2,  TOP_H, DLG_W_COMPACT - tabW*2,  TAB_H, FALSE);
+        // Tabs occupy top bar left of the layout-toggle button
+        const int rightBtnsW = 26 + 4 + 22 + PAD;  // toggle + gap + close + right-pad
+        const int tabAreaW   = cw - rightBtnsW;
+        const int tabW       = tabAreaW / 3;
+        MoveWindow (p->hBtnTabIdentify, 0,       topY, tabW,              BTN_H, FALSE);
+        MoveWindow (p->hBtnTabResults,  tabW,    topY, tabW,              BTN_H, FALSE);
+        MoveWindow (p->hBtnTabSettings, tabW*2,  topY, tabAreaW - tabW*2, BTN_H, FALSE);
         ShowWindow (p->hBtnTabIdentify,  SW_SHOW);
         ShowWindow (p->hBtnTabResults,   SW_SHOW);
         ShowWindow (p->hBtnTabSettings,  SW_SHOW);
@@ -323,13 +288,11 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         // "IDENTIFY SONG" label painted in WM_PAINT — skip 14+4
         ly += 14 + 4;
 
-        // 3-part source toggle
+        // 2-part source toggle: [Browser | Deck]
         {
-            const int segW = lw / 3;
-            const int segR = lw - segW * 3;
-            MoveWindow (p->hBtnSrcBrowser, lx,            ly, segW,         BTN_H, FALSE);
-            MoveWindow (p->hBtnSrcDeckAct, lx + segW,     ly, segW,         BTN_H, FALSE);
-            MoveWindow (p->hBtnSrcDeckOth, lx + segW * 2, ly, segW + segR,  BTN_H, FALSE);
+            const int segW = lw / 2;
+            MoveWindow (p->hBtnSrcBrowser, lx,        ly, segW,      BTN_H, FALSE);
+            MoveWindow (p->hBtnSrcDeck,    lx + segW, ly, lw - segW, BTN_H, FALSE);
         }
         ly += BTN_H + 6;
 
@@ -353,8 +316,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hCandList, lx, ly, lw, DLG_H - ly - PAD, FALSE);
 
         showCtrl (p->hBtnSrcBrowser, true);
-        showCtrl (p->hBtnSrcDeckAct, true);
-        showCtrl (p->hBtnSrcDeckOth, true);
+        showCtrl (p->hBtnSrcDeck,    true);
         showCtrl (p->hEditTitle,     true);
         showCtrl (p->hEditArtist,    true);
         showCtrl (p->hBtnSearch,     true);
@@ -385,7 +347,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     {
         const int lx     = PAD;
         const int lw     = DLG_W_COMPACT - PAD * 2;
-        const int bodyY  = TOP_H + TAB_H;
+        const int bodyY  = TOP_H;  // tabs now live in top bar, no extra strip
         const bool showI = (p->activeTab == 0);
         const bool showR = (p->activeTab == 1);
         const bool showS = (p->activeTab == 2);
@@ -395,11 +357,9 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         {
             int ly = bodyY + PAD;
 
-            const int segW = lw / 3;
-            const int segR = lw - segW * 3;
-            MoveWindow (p->hBtnSrcBrowser, lx,            ly, segW,         BTN_H, FALSE);
-            MoveWindow (p->hBtnSrcDeckAct, lx + segW,     ly, segW,         BTN_H, FALSE);
-            MoveWindow (p->hBtnSrcDeckOth, lx + segW * 2, ly, segW + segR,  BTN_H, FALSE);
+            const int segW = lw / 2;
+            MoveWindow (p->hBtnSrcBrowser, lx,        ly, segW,      BTN_H, FALSE);
+            MoveWindow (p->hBtnSrcDeck,    lx + segW, ly, lw - segW, BTN_H, FALSE);
             ly += BTN_H + 6;
 
             const int sbW = BTN_H;
@@ -415,8 +375,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
             MoveWindow (p->hCandList, lx, ly, lw, DLG_H - ly - PAD, FALSE);
         }
         showCtrl (p->hBtnSrcBrowser, showI);
-        showCtrl (p->hBtnSrcDeckAct, showI);
-        showCtrl (p->hBtnSrcDeckOth, showI);
+        showCtrl (p->hBtnSrcDeck,    showI);
         showCtrl (p->hEditTitle,     showI);
         showCtrl (p->hEditArtist,    showI);
         showCtrl (p->hBtnSearch,     showI);
@@ -476,8 +435,7 @@ static void updateSourceToggle (TigerTandaPlugin* p, int newMode, HWND /*hwnd*/)
     p->lastSeenTitle.clear();
     p->lastSeenArtist.clear();
     if (p->hBtnSrcBrowser) InvalidateRect (p->hBtnSrcBrowser, nullptr, FALSE);
-    if (p->hBtnSrcDeckAct) InvalidateRect (p->hBtnSrcDeckAct, nullptr, FALSE);
-    if (p->hBtnSrcDeckOth) InvalidateRect (p->hBtnSrcDeckOth, nullptr, FALSE);
+    if (p->hBtnSrcDeck)    InvalidateRect (p->hBtnSrcDeck,    nullptr, FALSE);
     p->saveSettings();
 }
 
@@ -560,10 +518,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hBtnTabResults   = mkBtn (IDC_BTN_TAB_RESULTS,  L"Results");
         p->hBtnTabSettings  = mkBtn (IDC_BTN_TAB_SETTINGS, L"Settings");
 
-        // Source toggle
-        p->hBtnSrcBrowser   = mkBtn (IDC_BTN_SRC_BROWSER,  L"Browser");
-        p->hBtnSrcDeckAct   = mkBtn (IDC_BTN_SRC_DECK_ACT, L"Deck (Active)");
-        p->hBtnSrcDeckOth   = mkBtn (IDC_BTN_SRC_DECK_OTH, L"Deck (Other)");
+        // Source toggle: [Browser | Deck ▾] — Deck opens popup menu
+        p->hBtnSrcBrowser   = mkBtn (IDC_BTN_SRC_BROWSER, L"Browser");
+        p->hBtnSrcDeck      = mkBtn (IDC_BTN_SRC_DECK,    L"Deck");
 
         // Search row
         p->hEditTitle = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
@@ -739,12 +696,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         // ── COMPACT MODE ─────────────────────────────────────────────────────
         else
         {
-            // Tab strip background
-            RECT tabBgR { 0, TOP_H, DLG_W_COMPACT, TOP_H + TAB_H };
-            fillRect (hdc, tabBgR, TCol::panel);
-
-            // Body background
-            RECT bodyR { 0, TOP_H + TAB_H, DLG_W_COMPACT, DLG_H };
+            // Body background (tabs are now in the top bar, body starts at TOP_H)
+            RECT bodyR { 0, TOP_H, DLG_W_COMPACT, DLG_H };
             fillRect (hdc, bodyR, TCol::bg);
 
             // "yr±" label in Settings tab
@@ -802,6 +755,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (!p) break;
 
         // Poll song from browser or deck
+        // sourceMode: 0=Browser, 1=Left(deck0), 2=Right(deck1), 3=Active, 4=Inactive
         std::wstring newTitle, newArtist;
         if (p->sourceMode == 0)
         {
@@ -810,8 +764,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
         else
         {
-            int activeDeck = (int) p->vdjGetValue ("get_active_deck");
-            int deckIdx    = (p->sourceMode == 1) ? activeDeck : (1 - activeDeck);
+            int deckIdx = 0;
+            if      (p->sourceMode == 1) deckIdx = 0;   // Left
+            else if (p->sourceMode == 2) deckIdx = 1;   // Right
+            else if (p->sourceMode == 3) deckIdx = (int) p->vdjGetValue ("get_active_deck");   // Active
+            else                          deckIdx = 1 - (int) p->vdjGetValue ("get_active_deck"); // Inactive
             char titleQ[32], artistQ[32];
             snprintf (titleQ,  sizeof (titleQ),  "deck%d_title",  deckIdx);
             snprintf (artistQ, sizeof (artistQ), "deck%d_artist", deckIdx);
@@ -829,15 +786,19 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             p->runIdentification (newTitle, newArtist);
         }
 
-        // Visibility sync
+        // Visibility sync: show unless VDJ owner window is minimised.
+        // As an owned WS_POPUP window, Windows keeps us above VDJ in z-order
+        // but allows other unrelated apps to sit on top — exactly the desired behaviour.
         if (p->dialogRequestedOpen)
         {
-            if (isVdjHostForeground())
+            HWND ownerHwnd   = GetWindow (hwnd, GW_OWNER);
+            bool vdjMinimised = ownerHwnd && IsIconic (ownerHwnd);
+
+            if (!vdjMinimised)
             {
                 if (!IsWindowVisible (hwnd))
                     ShowWindow (hwnd, SW_SHOWNOACTIVATE);
-                SetWindowPos (hwnd, HWND_TOP, 0, 0, 0, 0,
-                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                // No HWND_TOP / HWND_TOPMOST — owned window z-order handles it
             }
             else if (IsWindowVisible (hwnd))
             {
@@ -896,10 +857,27 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (p->hBtnTabSettings) InvalidateRect (p->hBtnTabSettings, nullptr, FALSE);
             break;
 
-        // 3-part segmented source toggle
-        case IDC_BTN_SRC_BROWSER:  updateSourceToggle (p, 0, hwnd); break;
-        case IDC_BTN_SRC_DECK_ACT: updateSourceToggle (p, 1, hwnd); break;
-        case IDC_BTN_SRC_DECK_OTH: updateSourceToggle (p, 2, hwnd); break;
+        // Source toggle: Browser | Deck (Deck opens popup to pick Left/Right/Active/Inactive)
+        case IDC_BTN_SRC_BROWSER:
+            updateSourceToggle (p, 0, hwnd);
+            break;
+        case IDC_BTN_SRC_DECK:
+        {
+            // Build popup menu — check the currently selected deck sub-mode
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW (menu, MF_STRING | (p->sourceMode == 1 ? MF_CHECKED : 0), 1, L"Left");
+            AppendMenuW (menu, MF_STRING | (p->sourceMode == 2 ? MF_CHECKED : 0), 2, L"Right");
+            AppendMenuW (menu, MF_STRING | (p->sourceMode == 3 ? MF_CHECKED : 0), 3, L"Active");
+            AppendMenuW (menu, MF_STRING | (p->sourceMode == 4 ? MF_CHECKED : 0), 4, L"Inactive");
+            RECT btnR;
+            GetWindowRect (p->hBtnSrcDeck, &btnR);
+            int sel = TrackPopupMenu (menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+                                     btnR.left, btnR.bottom, 0, hwnd, nullptr);
+            DestroyMenu (menu);
+            if (sel >= 1 && sel <= 4)
+                updateSourceToggle (p, sel, hwnd);
+            break;
+        }
 
         case IDC_BTN_SEARCH:
         {
@@ -1011,62 +989,46 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (di->CtlType == ODT_BUTTON)
         {
-            // Source toggle segments
+            // Source toggle: Browser | Deck — flat text toggle style
             if (di->CtlID == IDC_BTN_SRC_BROWSER)
             {
-                drawSegmentButton (di, L"Browser",      p->sourceMode == 0, p->fontSmall, true,  false);
+                drawTextToggle (di, L"Browser", p->sourceMode == 0, p->fontSmall, p->fontBold, TCol::panel);
                 return TRUE;
             }
-            if (di->CtlID == IDC_BTN_SRC_DECK_ACT)
+            if (di->CtlID == IDC_BTN_SRC_DECK)
             {
-                drawSegmentButton (di, L"Deck (Active)",p->sourceMode == 1, p->fontSmall, false, false);
-                return TRUE;
-            }
-            if (di->CtlID == IDC_BTN_SRC_DECK_OTH)
-            {
-                drawSegmentButton (di, L"Deck (Other)", p->sourceMode == 2, p->fontSmall, false, true);
+                // Show current deck sub-mode in label when active
+                static const wchar_t* deckNames[] = { L"", L"Left", L"Right", L"Active", L"Inactive" };
+                bool deckActive = (p->sourceMode != 0);
+                std::wstring label = deckActive
+                    ? (std::wstring(L"Deck: ") + deckNames[p->sourceMode])
+                    : L"Deck";
+                drawTextToggle (di, label, deckActive, p->fontSmall, p->fontBold, TCol::panel);
                 return TRUE;
             }
 
-            // Compact-mode tab buttons
+            // Compact-mode tab buttons — flat text toggle style
             if (di->CtlID == IDC_BTN_TAB_IDENTIFY)
             {
-                drawTabButton (di, L"Identify", p->activeTab == 0, p->fontSmall, true,  false);
+                drawTextToggle (di, L"Identify", p->activeTab == 0, p->fontSmall, p->fontBold, TCol::panel);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_TAB_RESULTS)
             {
-                drawTabButton (di, L"Results",  p->activeTab == 1, p->fontSmall, false, false);
+                drawTextToggle (di, L"Results",  p->activeTab == 1, p->fontSmall, p->fontBold, TCol::panel);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_TAB_SETTINGS)
             {
-                drawTabButton (di, L"Settings", p->activeTab == 2, p->fontSmall, false, true);
+                drawTextToggle (di, L"Settings", p->activeTab == 2, p->fontSmall, p->fontBold, TCol::panel);
                 return TRUE;
             }
 
-            // Layout toggle — draw arrow glyph instead of text
+            // Layout toggle — arrow glyph on flat panel background, orange colour
             if (di->CtlID == IDC_BTN_LAYOUT_TOGGLE)
             {
                 bool pressed = (di->itemState & ODS_SELECTED) != 0;
-                COLORREF bg = pressed ? TCol::buttonHover : TCol::buttonBg;
-                RECT r = di->rcItem;
-
-                HRGN rgn = CreateRoundRectRgn (r.left, r.top, r.right, r.bottom, 6, 6);
-                SelectClipRgn (di->hDC, rgn);
-                fillRect (di->hDC, r, bg);
-                SelectClipRgn (di->hDC, nullptr);
-                DeleteObject (rgn);
-
-                HPEN pen    = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-                HPEN oldPen = (HPEN) SelectObject (di->hDC, pen);
-                HBRUSH oldBr = (HBRUSH) SelectObject (di->hDC, GetStockObject (NULL_BRUSH));
-                RoundRect (di->hDC, r.left, r.top, r.right, r.bottom, 6, 6);
-                SelectObject (di->hDC, oldPen);
-                SelectObject (di->hDC, oldBr);
-                DeleteObject (pen);
-
-                // Wide mode = expanded, draw collapse arrows; compact = draw expand arrows
+                fillRect (di->hDC, di->rcItem, pressed ? TCol::buttonHover : TCol::panel);
                 drawArrowGlyph (di->hDC, di->rcItem, p->viewMode == 0);
                 return TRUE;
             }
