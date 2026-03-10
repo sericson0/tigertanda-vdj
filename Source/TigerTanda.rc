@@ -1,0 +1,5 @@
+#include <windows.h>
+
+#define IDR_LOGO 101
+
+IDR_LOGO RCDATA "logo.png"
