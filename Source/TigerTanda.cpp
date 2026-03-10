@@ -88,7 +88,7 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
         dialogRequestedOpen = true;
         suppressNextHideSync = false;
         ShowWindow (hDlg, SW_SHOW);
-        SetWindowPos (hDlg, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        SetWindowPos (hDlg, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
         pluginInterface->Type = VDJINTERFACE_DIALOG;
         pluginInterface->hWnd = hDlg;
@@ -116,7 +116,7 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
         posY = (GetSystemMetrics (SM_CYSCREEN) - DLG_H) / 2;
     }
 
-    hDlg = CreateWindowExW (WS_EX_TOOLWINDOW | WS_EX_TOPMOST, WND_CLASS, L"TigerTanda",
+    hDlg = CreateWindowExW (WS_EX_TOOLWINDOW, WND_CLASS, L"TigerTanda",
                             WS_POPUP | WS_CLIPCHILDREN | WS_VISIBLE,
                             posX, posY, DLG_W, DLG_H,
                             parentHwnd, nullptr, hInstance, this);
@@ -183,35 +183,35 @@ void TigerTandaPlugin::vdjSend (const std::string& cmd)
 
 void TigerTandaPlugin::detectMetadataFolder()
 {
-    // Check if metadataFolder already contains a "metadata" subfolder
+    // Check if metadataFolder already contains metadata.csv
     std::error_code ec;
-    fs::path candidate = fs::path (metadataFolder) / L"metadata";
-    if (fs::is_directory (candidate, ec))
+    fs::path candidate = fs::path (metadataFolder) / L"metadata.csv";
+    if (fs::is_regular_file (candidate, ec))
     {
-        metadataFolder = candidate.wstring();
+        metadataFolder = fs::path (metadataFolder).wstring();
         return;
     }
 
-    // Try %APPDATA%/VirtualDJ/Plugins64/metadata
+    // Try %APPDATA%/VirtualDJ/Plugins64/
     wchar_t appData[MAX_PATH] = {};
     if (SHGetFolderPathW (nullptr, CSIDL_APPDATA, nullptr, 0, appData) == S_OK)
     {
-        fs::path vdjMeta = fs::path (appData) / L"VirtualDJ" / L"Plugins64" / L"metadata";
-        if (fs::is_directory (vdjMeta, ec))
+        fs::path vdjDir = fs::path (appData) / L"VirtualDJ" / L"Plugins64";
+        if (fs::is_regular_file (vdjDir / L"metadata.csv", ec))
         {
-            metadataFolder = vdjMeta.wstring();
+            metadataFolder = vdjDir.wstring();
             return;
         }
     }
 
-    // Try Documents/VirtualDJ/Plugins64/metadata
+    // Try Documents/VirtualDJ/Plugins64/
     wchar_t docs[MAX_PATH] = {};
     if (SHGetFolderPathW (nullptr, CSIDL_PERSONAL, nullptr, 0, docs) == S_OK)
     {
-        fs::path vdjMeta = fs::path (docs) / L"VirtualDJ" / L"Plugins64" / L"metadata";
-        if (fs::is_directory (vdjMeta, ec))
+        fs::path vdjDir = fs::path (docs) / L"VirtualDJ" / L"Plugins64";
+        if (fs::is_regular_file (vdjDir / L"metadata.csv", ec))
         {
-            metadataFolder = vdjMeta.wstring();
+            metadataFolder = vdjDir.wstring();
             return;
         }
     }
@@ -221,8 +221,9 @@ void TigerTandaPlugin::loadMetadata()
 {
     if (metadataFolder.empty()) return;
     std::error_code ec;
-    if (fs::is_directory (metadataFolder, ec))
-        matcher.loadFolder (metadataFolder);
+    fs::path csvPath = fs::path (metadataFolder) / L"metadata.csv";
+    if (fs::is_regular_file (csvPath, ec))
+        matcher.loadCsv (csvPath.wstring());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -260,6 +261,8 @@ void TigerTandaPlugin::loadSettings()
                 filterSameGenre = (val != "0");
             else if (key == "sameOrchestra")
                 filterSameOrchestra = (val != "0");
+            else if (key == "sameLabel")
+                filterSameLabel = (val != "0");
             else if (key == "yearRange")
             {
                 yearRange = std::stoi (val);
@@ -285,6 +288,7 @@ void TigerTandaPlugin::saveSettings()
     out << "sameGrouping=" << (filterSameGrouping ? 1 : 0) << "\n";
     out << "sameGenre=" << (filterSameGenre ? 1 : 0) << "\n";
     out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
+    out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
     out << "yearRange=" << yearRange << "\n";
 }
 

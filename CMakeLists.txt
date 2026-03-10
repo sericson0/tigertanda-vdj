@@ -54,10 +54,10 @@ target_link_libraries(TigerTanda PRIVATE
     uxtheme
 )
 
-# Copy metadata CSVs next to the VDJ plugin DLL
+# Copy metadata.csv next to the VDJ plugin DLL
 add_custom_command(TARGET TigerTanda POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/metadata"
-        "$<TARGET_FILE_DIR:TigerTanda>/metadata"
-    COMMENT "Copying metadata CSV files to VDJ plugin output directory"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/metadata.csv"
+        "$<TARGET_FILE_DIR:TigerTanda>/metadata.csv"
+    COMMENT "Copying metadata.csv to VDJ plugin output directory"
 )

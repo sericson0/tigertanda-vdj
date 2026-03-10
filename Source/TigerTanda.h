@@ -19,6 +19,9 @@
 enum CtrlId
 {
     IDC_BTN_SRC_TOGGLE     = 2001,
+    IDC_BTN_SRC_BROWSER    = 2002,
+    IDC_BTN_SRC_DECK_ACT   = 2003,
+    IDC_BTN_SRC_DECK_OTH   = 2004,
     IDC_EDIT_TITLE         = 2101,
     IDC_EDIT_ARTIST        = 2102,
     IDC_BTN_SEARCH         = 2103,
@@ -28,12 +31,14 @@ enum CtrlId
     IDC_CHK_SAME_GROUPING  = 2303,
     IDC_CHK_SAME_GENRE     = 2304,
     IDC_CHK_SAME_ORCHESTRA = 2305,
+    IDC_CHK_SAME_LABEL     = 2306,
     IDC_EDIT_YEAR_RANGE    = 2401,
     IDC_SPIN_YEAR_RANGE    = 2402,
     IDC_BTN_FIND_SIMILAR   = 2501,
     IDC_RESULTS_LIST       = 2601,
     IDC_BTN_CLOSE          = 2701,
     IDC_BTN_RESET          = 2702,
+    IDC_BTN_SEARCH_VDJ     = 2703,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,6 +124,7 @@ public:
     bool filterSameGrouping  = false;
     bool filterSameGenre     = true;
     bool filterSameOrchestra = false;
+    bool filterSameLabel     = false;
     int  yearRange           = 5;   // 0 = disabled
 
     // ── Source mode ─────────────────────────────────────────────────────────
@@ -143,12 +149,17 @@ public:
     HWND hChkGrouping   = nullptr;
     HWND hChkGenre      = nullptr;
     HWND hChkOrchestra  = nullptr;
+    HWND hChkLabel      = nullptr;
     HWND hEditYearRange = nullptr;
     HWND hSpinYear      = nullptr;
     HWND hResultsList   = nullptr;
     HWND hBtnSrcToggle  = nullptr;
+    HWND hBtnSrcBrowser = nullptr;
+    HWND hBtnSrcDeckAct = nullptr;
+    HWND hBtnSrcDeckOth = nullptr;
     HWND hBtnClose      = nullptr;
     HWND hBtnReset      = nullptr;
+    HWND hBtnSearchVdj  = nullptr;
 
     // ── GDI resources ────────────────────────────────────────────────────────
     HFONT fontNormal   = nullptr;

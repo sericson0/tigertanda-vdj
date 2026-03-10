@@ -142,6 +142,7 @@ void TigerTandaPlugin::runTandaSearch()
         if (filterSameGrouping  && !wiequal (rec.grouping,   ref.grouping))   continue;
         if (filterSameGenre     && !wiequal (rec.genre,      ref.genre))      continue;
         if (filterSameOrchestra && !wiequal (rec.orchestra,  ref.orchestra))  continue;
+        if (filterSameLabel     && !wiequal (rec.label,      ref.label))      continue;
 
         // Year range filter
         if (yearRange > 0 && refYear > 0)
