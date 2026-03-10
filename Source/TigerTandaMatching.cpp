@@ -65,11 +65,11 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
 
     // Use artist-aware search when artist is available
     if (!artist.empty())
-        candidates = matcher.findCandidatesForArtist (title, artist, 10, 40.0f);
+        candidates = matcher.findCandidatesForArtist (title, artist, 5, 40.0f);
 
     // Fallback: title-only search
     if (candidates.empty())
-        candidates = matcher.findCandidates (title, 10, 40.0f);
+        candidates = matcher.findCandidates (title, 5, 40.0f);
 
     // Refresh candidates listbox
     if (hCandList)
@@ -172,10 +172,7 @@ void TigerTandaPlugin::runTandaSearch()
 
     // Force redraw
     if (hDlg)
-    {
-        RECT r { RIGHT_X, 0, DLG_W, DLG_H };
-        InvalidateRect (hDlg, &r, FALSE);
-    }
+        InvalidateRect (hDlg, nullptr, FALSE);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

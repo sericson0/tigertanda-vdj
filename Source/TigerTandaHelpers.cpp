@@ -96,3 +96,67 @@ bool isVdjHostForeground()
     if (fg) GetWindowThreadProcessId (fg, &fgPid);
     return fgPid == GetCurrentProcessId();
 }
+
+std::wstring normalizeForSearch (const std::wstring& s)
+{
+    std::wstring out;
+    out.reserve (s.size());
+    for (wchar_t c : s)
+    {
+        switch (c)
+        {
+            // a variants
+            case L'\u00E0': case L'\u00E1': case L'\u00E2':
+            case L'\u00E3': case L'\u00E4': case L'\u00E5': out += L'a'; break;
+            case L'\u00C0': case L'\u00C1': case L'\u00C2':
+            case L'\u00C3': case L'\u00C4': case L'\u00C5': out += L'A'; break;
+            // e variants
+            case L'\u00E8': case L'\u00E9': case L'\u00EA': case L'\u00EB': out += L'e'; break;
+            case L'\u00C8': case L'\u00C9': case L'\u00CA': case L'\u00CB': out += L'E'; break;
+            // i variants
+            case L'\u00EC': case L'\u00ED': case L'\u00EE': case L'\u00EF': out += L'i'; break;
+            case L'\u00CC': case L'\u00CD': case L'\u00CE': case L'\u00CF': out += L'I'; break;
+            // o variants
+            case L'\u00F2': case L'\u00F3': case L'\u00F4':
+            case L'\u00F5': case L'\u00F6': out += L'o'; break;
+            case L'\u00D2': case L'\u00D3': case L'\u00D4':
+            case L'\u00D5': case L'\u00D6': out += L'O'; break;
+            // u variants
+            case L'\u00F9': case L'\u00FA': case L'\u00FB': case L'\u00FC': out += L'u'; break;
+            case L'\u00D9': case L'\u00DA': case L'\u00DB': case L'\u00DC': out += L'U'; break;
+            // n tilde
+            case L'\u00F1': out += L'n'; break;
+            case L'\u00D1': out += L'N'; break;
+            // c cedilla
+            case L'\u00E7': out += L'c'; break;
+            case L'\u00C7': out += L'C'; break;
+            default: out += c; break;
+        }
+    }
+    return out;
+}
+
+void rebuildPrelistenWaveBins (std::vector<int>& bins, const std::wstring& keyPath)
+{
+    bins.assign (64, 0);
+    if (keyPath.empty()) return;
+
+    uint32_t seed = 2166136261u;
+    for (wchar_t c : keyPath)
+    {
+        seed ^= (uint32_t) towlower (c);
+        seed *= 16777619u;
+    }
+
+    uint32_t x = seed ? seed : 1u;
+    for (size_t i = 0; i < bins.size(); ++i)
+    {
+        x = x * 1664525u + 1013904223u;
+        int v = 2 + (int) ((x >> 24) & 0x0F);
+        if (i > 0)
+            v = (v + bins[i - 1]) / 2 + ((int) (x & 0x03) - 1);
+        if (v < 2) v = 2;
+        if (v > 17) v = 17;
+        bins[i] = v;
+    }
+}
