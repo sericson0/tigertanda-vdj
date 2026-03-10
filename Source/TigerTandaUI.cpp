@@ -1001,7 +1001,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             HFONT oldFont = (HFONT) SelectObject (hdc, p->fontBold);
             DrawTextW (hdc, rec.title.c_str(), -1, &tm, DT_CALCRECT | DT_SINGLELINE);
             SelectObject (hdc, oldFont);
-            int titleW = std::min ((int)(tm.right - tm.left), avW * 55 / 100);
+            int titleW = (std::min) ((int)(tm.right - tm.left), avW * 55 / 100);
 
             RECT titleR { tx, r.top, tx + titleW, r.bottom };
             drawText (hdc, titleR, rec.title, TCol::textBright, p->fontBold,
