@@ -59,6 +59,7 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
     candidates.clear();
     confirmedIdx = -1;
     results.clear();
+    selectedResultIdx = -1;
 
     if (title.empty()) return;
 
@@ -110,6 +111,7 @@ void TigerTandaPlugin::confirmCandidate (int idx)
 void TigerTandaPlugin::runTandaSearch()
 {
     results.clear();
+    selectedResultIdx = -1;
 
     if (confirmedIdx < 0 || confirmedIdx >= (int) candidates.size())
     {
@@ -189,6 +191,7 @@ void TigerTandaPlugin::resetAll()
     candidates.clear();
     confirmedIdx = -1;
     results.clear();
+    selectedResultIdx = -1;
     lastSeenTitle.clear();
     lastSeenArtist.clear();
 

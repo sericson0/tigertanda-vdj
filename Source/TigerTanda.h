@@ -55,18 +55,20 @@ inline constexpr UINT_PTR TIMER_BROWSE_POLL = 1;
 //  Layout constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_H          = 420;
-inline constexpr int DLG_W_WIDE     = 700;
-inline constexpr int DLG_W_COMPACT  = 360;
+inline constexpr int DLG_H          = 336;           // 20% shorter than original 420
+inline constexpr int DLG_W_WIDE     = 560;
+inline constexpr int DLG_W_COMPACT  = 320;
 inline constexpr int DLG_W          = DLG_W_WIDE;   // alias for wide-mode paint code
 inline constexpr int TOP_H          = 36;
+inline constexpr int RIBBON_H       = 22;            // wide-mode settings ribbon
 inline constexpr int TAB_H          = 28;            // compact mode tab-strip height
-inline constexpr int LEFT_W         = 270;
+inline constexpr int LEFT_W         = 230;
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
-inline constexpr int EDIT_H         = 18;
+inline constexpr int EDIT_H         = 24;            // match magnifying glass button height
 inline constexpr int CAND_ITEM_H    = 26;
-inline constexpr int RESULT_ITEM_H  = 22;
+inline constexpr int RESULT_ITEM_H  = 20;
+inline constexpr int DETAIL_BOX_H   = 52;            // metadata detail box for selected result
 
 // Right panel x-origin / width (wide mode)
 inline constexpr int RIGHT_X = LEFT_W + PAD * 2;
@@ -123,6 +125,7 @@ public:
 
     // ── Phase 2: Tanda search ────────────────────────────────────────────────
     std::vector<TgRecord>    results;        // up to 20
+    int                      selectedResultIdx = -1; // selected result for detail box
 
     // ── Filters ─────────────────────────────────────────────────────────────
     bool filterSameArtist    = true;
