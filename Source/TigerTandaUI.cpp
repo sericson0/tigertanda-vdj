@@ -607,8 +607,17 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     // ── Timer: browser/deck polling + visibility sync ────────────────────────
     case WM_TIMER:
     {
-        if (wParam != TIMER_BROWSE_POLL) break;
         if (!p) break;
+
+        // ── Smart search timer (one-shot) ────────────────────────────────────
+        if (wParam == TIMER_SMART_SEARCH)
+        {
+            KillTimer (hwnd, TIMER_SMART_SEARCH);
+            p->runSmartSearch();
+            return 0;
+        }
+
+        if (wParam != TIMER_BROWSE_POLL) break;
 
         // ── Visibility: show only when VDJ process is foreground ──────────────
         if (p->dialogRequestedOpen)
@@ -660,7 +669,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
         }
 
-        // ── Poll VDJ browser list contents ────────────────────────────────────
+        // ── Poll VDJ browser list contents (skip while smart search pending) ──
+        if (!p->smartSearchPending)
         {
             double rawCount = p->vdjGetValue ("browser_count");
             int newCount = (int) rawCount;
@@ -807,6 +817,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 std::string cmd = "search \"" + toUtf8 (query) + "\"";
                 p->vdjSend (cmd);
                 p->vdjSend ("browser_window 'songs'");
+
+                // Store target for smart search scoring
+                p->searchTargetTitle  = rec.title;
+                p->searchTargetArtist = rec.bandleader;
+                p->searchTargetYear   = rec.year;
+                p->smartSearchPending = true;
+
+                // Fire smart search after 200ms to let VDJ populate results
+                SetTimer (hwnd, TIMER_SMART_SEARCH, 200, nullptr);
+
                 // Switch to Browse tab so user sees results
                 p->activeTab = 2;
                 p->saveSettings();
@@ -832,12 +852,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 int sel = (int) SendMessageW (p->hBrowseList, LB_GETCURSEL, 0, 0);
                 if (sel >= 0 && sel < (int) p->browseItems.size())
                 {
-                    // Move VDJ browser focus to this position in the list
-                    std::string cmd = "browser_select " + std::to_string (sel);
-                    p->vdjSend (cmd);
+                    const BrowseItem& bi = p->browseItems[sel];
+
+                    // Use browserIndex for smart search results, otherwise listbox index
+                    int vdjIdx = (bi.browserIndex >= 0) ? bi.browserIndex : sel;
+                    p->vdjSend ("browser_scroll 'top'");
+                    Sleep (20);
+                    if (vdjIdx > 0)
+                        p->vdjSend ("browser_scroll +" + std::to_string (vdjIdx));
 
                     // Update local prelisten waveform if path available
-                    const BrowseItem& bi = p->browseItems[sel];
                     if (!bi.filePath.empty())
                     {
                         rebuildPrelistenWaveBins (p->prelistenWaveBins, bi.filePath);
@@ -1179,6 +1203,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
     case WM_DESTROY:
         KillTimer (hwnd, TIMER_BROWSE_POLL);
+        KillTimer (hwnd, TIMER_SMART_SEARCH);
         return 0;
     }
 

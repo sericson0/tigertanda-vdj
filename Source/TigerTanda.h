@@ -58,7 +58,8 @@ enum CtrlId
 //  Timer IDs
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr UINT_PTR TIMER_BROWSE_POLL = 1;
+inline constexpr UINT_PTR TIMER_BROWSE_POLL   = 1;
+inline constexpr UINT_PTR TIMER_SMART_SEARCH = 2;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants (compact / tab mode only)
@@ -90,6 +91,8 @@ struct BrowseItem
     std::wstring artist;
     std::wstring year;
     std::wstring filePath;
+    int   browserIndex = -1;   // original index in VDJ browser list
+    float score        = 0.0f; // smart search relevance score
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +121,7 @@ public:
     void confirmCandidate (int idx);
     void runTandaSearch();
     void resetAll();
+    void runSmartSearch();
 
     // Settings (TigerTanda.cpp)
     void loadSettings();
@@ -162,6 +166,12 @@ public:
     // ── Browse history ───────────────────────────────────────────────────────
     std::vector<BrowseItem> browseItems;   // current VDJ browser list, cap ~200
     int  browseListCount = -1;             // cached browser_count for change detection
+
+    // ── Smart search (ranked VDJ browser results) ────────────────────────────
+    std::wstring searchTargetTitle;
+    std::wstring searchTargetArtist;
+    std::wstring searchTargetYear;
+    bool         smartSearchPending = false;
 
     // ── Prelisten ────────────────────────────────────────────────────────────
     bool              prelistenActive    = false;

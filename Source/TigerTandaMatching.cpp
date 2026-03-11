@@ -176,6 +176,123 @@ void TigerTandaPlugin::runTandaSearch()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Smart search: read VDJ browser results, score & rank, keep top 5
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TigerTandaPlugin::runSmartSearch()
+{
+    smartSearchPending = false;
+
+    int totalItems = (int) vdjGetValue ("browser_count");
+    if (totalItems <= 0) return;
+
+    const int limit = totalItems < 200 ? totalItems : 200;
+    int targetYear = parseYear (searchTargetYear);
+
+    // Read all VDJ browser items and score them
+    struct ScoredItem
+    {
+        BrowseItem item;
+        float      compositeScore;
+    };
+    std::vector<ScoredItem> scored;
+
+    for (int i = 0; i < limit; ++i)
+    {
+        std::string sq1 = "get_browser_file " + std::to_string (i) + " 'title'";
+        std::string sq2 = "get_browser_file " + std::to_string (i) + " 'artist'";
+        std::string sq3 = "get_browser_file " + std::to_string (i) + " 'year'";
+        std::string sq4 = "get_browser_file " + std::to_string (i) + " 'stars'";
+        std::string sq5 = "get_browser_file " + std::to_string (i) + " 'play_count'";
+
+        BrowseItem bi;
+        bi.title        = vdjGetString (sq1.c_str());
+        bi.artist       = vdjGetString (sq2.c_str());
+        bi.year         = vdjGetString (sq3.c_str());
+        bi.browserIndex = i;
+
+        if (bi.title.empty() && bi.artist.empty()) break;
+
+        // Read stars and play count
+        double starsVal    = vdjGetValue (sq4.c_str());
+        double playVal     = vdjGetValue (sq5.c_str());
+        int    stars       = (int) starsVal;
+        int    playCount   = (int) playVal;
+        if (stars < 0) stars = 0;
+        if (stars > 5) stars = 5;
+        if (playCount < 0) playCount = 0;
+
+        // Score components (each 0-100)
+        float artistScore = 0.0f;
+        if (!searchTargetArtist.empty() && !bi.artist.empty())
+            artistScore = TangoMatcher::tokenSortRatio (searchTargetArtist, bi.artist);
+
+        float titleScore = 0.0f;
+        if (!searchTargetTitle.empty() && !bi.title.empty())
+            titleScore = TangoMatcher::tokenSortRatio (searchTargetTitle, bi.title);
+
+        float yearScore = 0.0f;
+        if (targetYear > 0)
+        {
+            int itemYear = parseYear (bi.year);
+            if (itemYear > 0)
+            {
+                float diff = 100.0f - (float) std::abs (targetYear - itemYear) * 10.0f;
+                yearScore = (diff > 0.0f) ? diff : 0.0f;
+            }
+        }
+
+        float starsNorm    = (float) stars * 20.0f;     // 0-100
+        float playRaw      = (float) playCount * 5.0f;
+        float playNorm     = (playRaw < 100.0f) ? playRaw : 100.0f;  // 20+ plays = max
+        float qualityScore = (starsNorm + playNorm) / 2.0f;
+
+        // Composite: artist 40%, title 40%, year 10%, quality 10%
+        float composite = artistScore * 0.4f + titleScore * 0.4f
+                        + yearScore * 0.1f + qualityScore * 0.1f;
+
+        bi.score = composite;
+        scored.push_back ({ bi, composite });
+    }
+
+    // Sort by composite score descending
+    std::sort (scored.begin(), scored.end(), [] (const ScoredItem& a, const ScoredItem& b) {
+        return a.compositeScore > b.compositeScore;
+    });
+
+    // Keep top 5
+    browseItems.clear();
+    int keep = (int) scored.size() < 5 ? (int) scored.size() : 5;
+    for (int i = 0; i < keep; ++i)
+        browseItems.push_back (scored[i].item);
+
+    // Update cached count so normal polling doesn't immediately overwrite
+    browseListCount = totalItems;
+
+    // Populate browse listbox
+    if (hBrowseList)
+    {
+        SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
+        for (int i = 0; i < (int) browseItems.size(); ++i)
+            SendMessageW (hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
+    }
+
+    // Auto-scroll VDJ browser to #1 ranked result
+    if (!browseItems.empty())
+    {
+        vdjSend ("browser_scroll 'top'");
+        Sleep (20);
+        int topIdx = browseItems[0].browserIndex;
+        if (topIdx > 0)
+            vdjSend ("browser_scroll +" + std::to_string (topIdx));
+    }
+
+    // Force redraw
+    if (hDlg)
+        InvalidateRect (hDlg, nullptr, FALSE);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Reset everything
 // ─────────────────────────────────────────────────────────────────────────────
 
