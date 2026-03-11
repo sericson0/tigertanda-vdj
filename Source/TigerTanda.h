@@ -34,7 +34,8 @@ enum CtrlId
     IDC_EDIT_YEAR_RANGE    = 2401,
     IDC_SPIN_YEAR_RANGE    = 2402,
     IDC_BTN_YEAR_TOGGLE    = 2403,  // toggles whether year range applies
-    IDC_BTN_YEAR_VALUE     = 2404,  // cycles through actual range values
+    IDC_BTN_YEAR_VALUE     = 2404,  // cycles through actual range values (legacy)
+    IDC_COMBO_YEAR_RANGE   = 2405,  // dropdown for year range
 
     // Matches tab
     IDC_RESULTS_LIST       = 2601,
@@ -53,6 +54,13 @@ enum CtrlId
     IDC_BROWSE_LIST        = 2901,
     IDC_BTN_PRELISTEN      = 2902,
     IDC_BTN_ADD_END        = 2903,
+
+    // Settings: "How it works" sub-tabs
+    IDC_BTN_HOW_TAB_0      = 2501,  // Overview
+    IDC_BTN_HOW_TAB_1      = 2502,  // Track
+    IDC_BTN_HOW_TAB_2      = 2503,  // Matches
+    IDC_BTN_HOW_TAB_3      = 2504,  // Browser
+    IDC_BTN_HOW_TAB_4      = 2505,  // Filters
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +94,7 @@ inline constexpr int CAND_ITEM_H    = 46;    // increased for larger secondary t
 inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
 inline constexpr int RESULT_ITEM_H  = 22;    // increased from 20
 inline constexpr int BROWSE_ITEM_H  = 24;    // increased from 22
-inline constexpr int DETAIL_BOX_H   = 50;    // 2-row: Bandleader·Singer + Date·Genre·Label
+inline constexpr int DETAIL_BOX_H   = 82;    // 4-row: Bandleader·Singer + Date·Genre·Label + Orchestra + Group
 inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
 inline constexpr int TRACK_SEARCH_GAP = 14;  // gap between search row and candidates list
 
@@ -169,7 +177,8 @@ public:
     bool filterUseYearRange  = true;   // whether year range filter applies
 
     // ── Tab ─────────────────────────────────────────────────────────────────
-    int  activeTab = 0;       // 0=Track, 1=Matches, 2=Browse, 3=Settings
+    int  activeTab    = 0;    // 0=Track, 1=Matches, 2=Browse, 3=Settings
+    int  activeHowTab = 0;    // 0=Overview, 1=Track, 2=Matches, 3=Browser, 4=Filters
 
     // ── Browser/deck polling ─────────────────────────────────────────────────
     std::wstring lastSeenTitle;
@@ -224,14 +233,17 @@ public:
     HWND hBtnAddEnd        = nullptr;
     HWND hBtnYearToggle    = nullptr;
     HWND hBtnYearValue     = nullptr;
+    HWND hComboYearRange   = nullptr;
+    HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
 
     // ── GDI resources ────────────────────────────────────────────────────────
-    HFONT fontNormal   = nullptr;  // FONT_SIZE_NORMAL pt regular
-    HFONT fontBold     = nullptr;  // FONT_SIZE_NORMAL pt bold
-    HFONT fontSmall    = nullptr;  // FONT_SIZE_SMALL pt regular
-    HFONT fontDetail   = nullptr;  // FONT_SIZE_DETAIL pt regular (secondary rows, +4pt)
-    HFONT fontTitle    = nullptr;  // FONT_SIZE_BRAND pt bold (Tiger Tanda brand text)
+    HFONT fontNormal    = nullptr;  // FONT_SIZE_NORMAL pt regular
+    HFONT fontBold      = nullptr;  // FONT_SIZE_NORMAL pt bold
+    HFONT fontSmall     = nullptr;  // FONT_SIZE_SMALL pt regular
+    HFONT fontSmallBold = nullptr;  // FONT_SIZE_SMALL pt bold (inline bold in Settings content)
+    HFONT fontDetail    = nullptr;  // FONT_SIZE_DETAIL pt regular (secondary rows, +4pt)
+    HFONT fontTitle     = nullptr;  // FONT_SIZE_BRAND pt bold (Tiger Tanda brand text)
     HBRUSH panelBrush  = nullptr;
     HBRUSH cardBrush   = nullptr;
     ULONG_PTR gdiplusToken = 0;

@@ -24,11 +24,12 @@ TigerTandaPlugin::TigerTandaPlugin()
     icc.dwICC = ICC_BAR_CLASSES | ICC_WIN95_CLASSES;
     InitCommonControlsEx (&icc);
 
-    fontNormal = createFont (FONT_SIZE_NORMAL);
-    fontBold   = createFont (FONT_SIZE_NORMAL, FW_BOLD);
-    fontTitle  = createFont (FONT_SIZE_BRAND,  FW_BOLD);
-    fontSmall  = createFont (FONT_SIZE_SMALL);
-    fontDetail = createFont (FONT_SIZE_DETAIL);
+    fontNormal    = createFont (FONT_SIZE_NORMAL);
+    fontBold      = createFont (FONT_SIZE_NORMAL, FW_BOLD);
+    fontTitle     = createFont (FONT_SIZE_BRAND,  FW_BOLD);
+    fontSmall     = createFont (FONT_SIZE_SMALL);
+    fontSmallBold = createFont (FONT_SIZE_SMALL,  FW_BOLD);
+    fontDetail    = createFont (FONT_SIZE_DETAIL);
     panelBrush = CreateSolidBrush (TCol::panel);
     cardBrush  = CreateSolidBrush (TCol::card);
 
@@ -39,11 +40,12 @@ TigerTandaPlugin::TigerTandaPlugin()
 TigerTandaPlugin::~TigerTandaPlugin()
 {
     if (hDlg && IsWindow (hDlg)) DestroyWindow (hDlg);
-    if (fontNormal) DeleteObject (fontNormal);
-    if (fontBold)   DeleteObject (fontBold);
-    if (fontTitle)  DeleteObject (fontTitle);
-    if (fontSmall)  DeleteObject (fontSmall);
-    if (fontDetail) DeleteObject (fontDetail);
+    if (fontNormal)    DeleteObject (fontNormal);
+    if (fontBold)      DeleteObject (fontBold);
+    if (fontTitle)     DeleteObject (fontTitle);
+    if (fontSmall)     DeleteObject (fontSmall);
+    if (fontSmallBold) DeleteObject (fontSmallBold);
+    if (fontDetail)    DeleteObject (fontDetail);
     if (panelBrush) DeleteObject (panelBrush);
     if (cardBrush)  DeleteObject (cardBrush);
     delete reinterpret_cast<Gdiplus::Image*> (logoImage);

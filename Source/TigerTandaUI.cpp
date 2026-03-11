@@ -113,9 +113,36 @@ static void drawScoreDot (HDC hdc, int cx, int cy, float score)
     DeleteObject (br);
 }
 
+// Format raw date (M/D/YYYY or YYYY-M-D) to YYYY-mm-dd
+static std::wstring formatDateYMD (const std::wstring& raw)
+{
+    if (raw.empty()) return raw;
+    std::wstring parts[3];
+    int idx = 0;
+    for (wchar_t c : raw)
+    {
+        if ((c == L'/' || c == L'-') && idx < 2)
+            ++idx;
+        else
+            parts[idx] += c;
+    }
+    auto pad2 = [] (const std::wstring& s) -> std::wstring {
+        return s.size() < 2 ? L"0" + s : s;
+    };
+    if (parts[2].size() == 4)  // M/D/YYYY
+        return parts[2] + L"-" + pad2 (parts[0]) + L"-" + pad2 (parts[1]);
+    if (parts[0].size() == 4)  // YYYY-M-D
+        return parts[0] + L"-" + pad2 (parts[1]) + L"-" + pad2 (parts[2]);
+    return raw;
+}
+
 // Metadata detail box for selected result
-// Row 1: Bandleader · Singer   Row 2: Date · Genre · Label
-static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec, HFONT fontDetail, HFONT fontBold)
+// Row 1: Bandleader · Singer
+// Row 2: Date (YYYY-mm-dd) · Genre · Label
+// Row 3: Orchestra
+// Row 4: Group: <grouping>
+static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
+                                 HFONT fontDetail, HFONT fontBold, HFONT fontSmall)
 {
     fillRect (hdc, r, TCol::card);
 
@@ -127,26 +154,45 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec, HFONT fon
     DeleteObject (pen);
 
     int px = r.left + 6;
-    int py = r.top + 6;
-    const int lineH1 = 17;  // fontBold FONT_SIZE_NORMAL
-    const int lineH2 = 19;  // fontDetail FONT_SIZE_DETAIL
+    int py = r.top + 4;
+    const int lineH = 16;
 
     // Row 1: Bandleader · Singer
     std::wstring line1 = rec.bandleader;
     if (!rec.singer.empty()) { if (!line1.empty()) line1 += L"  \u00B7  "; line1 += rec.singer; }
-    RECT r1 { px, py, r.right - 6, py + lineH1 };
+    RECT r1 { px, py, r.right - 6, py + lineH };
     drawText (hdc, r1, line1, TCol::textBright, fontBold,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-    py += lineH1 + 3;
+    py += lineH + 2;
 
-    // Row 2: Date · Genre · Label
+    // Row 2: Date (YYYY-mm-dd) · Genre · Label
+    std::wstring dateStr = formatDateYMD (rec.date);
     std::wstring line2;
-    if (!rec.date.empty())  line2 += rec.date;
-    if (!rec.genre.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
-    if (!rec.label.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.label; }
-    RECT r2 { px, py, r.right - 6, py + lineH2 };
+    if (!dateStr.empty())    line2 += dateStr;
+    if (!rec.genre.empty())  { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
+    if (!rec.label.empty())  { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.label; }
+    RECT r2 { px, py, r.right - 6, py + lineH };
     drawText (hdc, r2, line2, TCol::textDim, fontDetail,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+    py += lineH + 2;
+
+    // Row 3: Orchestra
+    if (!rec.orchestra.empty())
+    {
+        RECT r3 { px, py, r.right - 6, py + lineH };
+        drawText (hdc, r3, rec.orchestra, TCol::textDim, fontDetail,
+                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    py += lineH + 2;
+
+    // Row 4: Group: <grouping>
+    if (!rec.grouping.empty())
+    {
+        std::wstring line4 = L"Group: " + rec.grouping;
+        RECT r4 { px, py, r.right - 6, py + lineH };
+        drawText (hdc, r4, line4, TCol::textDim, fontDetail,
+                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
 }
 
 // Draw prelisten waveform into a RECT (double-buffered)
@@ -277,12 +323,12 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     if (showM)
     {
         int ry = bodyY + PAD;
-        // Button row sits above the brand row
-        const int bottomRow  = DLG_H - PAD - BRAND_H - 4 - BTN_H;
-        const int vdjBtnW    = 110;
-        MoveWindow (p->hBtnSearchVdj, lx + lw - vdjBtnW, bottomRow, vdjBtnW, BTN_H, FALSE);
+        // FIND TRACK button shares the brand row (right-aligned)
+        const int brandY  = DLG_H - PAD - BRAND_H;
+        const int vdjBtnW = 100;
+        MoveWindow (p->hBtnSearchVdj, lx + lw - vdjBtnW, brandY, vdjBtnW, BRAND_H, FALSE);
 
-        const int detailTop = bottomRow - DETAIL_BOX_H - 4;
+        const int detailTop = brandY - DETAIL_BOX_H - 4;
         MoveWindow (p->hResultsList, lx, ry, lw, detailTop - ry - 2, FALSE);
     }
     showCtrl (p->hResultsList,  showM);
@@ -300,7 +346,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
 
         // Prelisten row: [▶ btn][waveform ... ][ADD btn]
         const int preBtnW = 28;
-        const int addBtnW = 60;
+        const int addBtnW = 72;  // +20% wider (was 60)
         MoveWindow (p->hBtnPrelisten, lx, preRowY, preBtnW, BTN_H, FALSE);
         MoveWindow (p->hBtnAddEnd,    lx + lw - addBtnW, preRowY, addBtnW, BTN_H, FALSE);
 
@@ -315,34 +361,57 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     // ── Settings tab ──────────────────────────────────────────────────────────
     if (showS)
     {
-        int sy = bodyY + PAD + 20;  // +20 for "FILTERS" section label
-        const int colW = lw / 3;
-        MoveWindow (p->hChkArtist,    lx,            sy, colW,          BTN_H, FALSE);
-        MoveWindow (p->hChkSinger,    lx + colW,     sy, colW,          BTN_H, FALSE);
-        MoveWindow (p->hChkGrouping,  lx + colW * 2, sy, lw - colW * 2, BTN_H, FALSE);
-        sy += BTN_H + 6;
-        MoveWindow (p->hChkGenre,     lx,            sy, colW,          BTN_H, FALSE);
-        MoveWindow (p->hChkOrchestra, lx + colW,     sy, colW,          BTN_H, FALSE);
-        MoveWindow (p->hChkLabel,     lx + colW * 2, sy, lw - colW * 2, BTN_H, FALSE);
-        sy += BTN_H + 10;
-        // Year range: [toggle ON/OFF btn][value btn]
-        const int ytW = 110;  // year toggle button width
-        const int yvW = 90;   // year value button width
-        MoveWindow (p->hBtnYearToggle, lx,          sy, ytW, BTN_H, FALSE);
-        MoveWindow (p->hBtnYearValue,  lx + ytW + 6, sy, yvW, BTN_H, FALSE);
+        const int btnH = BTN_H - 4;  // 20 — slightly smaller filter buttons
+        const int gap  = 4;
+        const int colW = (lw - gap * 2) / 3;
 
-        // Hide old year controls if they exist
+        int sy = bodyY + PAD;  // no header offset — descriptions section is first
+
+        // "How it works" sub-tabs row at top
+        const int howTabW = lw / 5;
+        for (int i = 0; i < 5; ++i)
+            MoveWindow (p->hBtnHowTabs[i], lx + i * howTabW, sy, howTabW, 18, FALSE);
+        sy += 18 + 4;  // 18px tabs + 4px gap
+
+        // Content area (drawn in WM_PAINT): 4 rows × 15px = 60px, then separator
+        sy += 60 + 8;  // skip painted content + separator gap
+
+        // Filter Row 1: ARTIST, SINGER, GENRE
+        MoveWindow (p->hChkArtist,    lx,                    sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkSinger,    lx + colW + gap,       sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkGenre,     lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
+        sy += btnH + 4;
+
+        // Filter Row 2: GROUPING, LABEL, ORCHESTRA
+        MoveWindow (p->hChkGrouping,  lx,                    sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkLabel,     lx + colW + gap,       sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkOrchestra, lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
+        sy += btnH + 8;
+
+        // Year row (centered): [YEAR toggle][year range combobox]
+        const int ytW = 60;
+        const int ycW = 90;
+        const int yearRowTotalW = ytW + 6 + ycW;  // 156
+        const int yearX = lx + (lw - yearRowTotalW) / 2;
+        MoveWindow (p->hBtnYearToggle,  yearX,          sy, ytW, btnH,       FALSE);
+        // Combobox height includes dropdown — add 120 for the drop-down list area
+        MoveWindow (p->hComboYearRange, yearX + ytW + 6, sy, ycW, btnH + 120, FALSE);
+
+        // Hide legacy year controls
         showCtrl (p->hEditYearRange, false);
         showCtrl (p->hSpinYear,      false);
+        showCtrl (p->hBtnYearValue,  false);
     }
-    showCtrl (p->hChkArtist,     showS);
-    showCtrl (p->hChkSinger,     showS);
-    showCtrl (p->hChkGrouping,   showS);
-    showCtrl (p->hChkGenre,      showS);
-    showCtrl (p->hChkOrchestra,  showS);
-    showCtrl (p->hChkLabel,      showS);
-    showCtrl (p->hBtnYearToggle, showS);
-    showCtrl (p->hBtnYearValue,  showS);
+    showCtrl (p->hChkArtist,      showS);
+    showCtrl (p->hChkSinger,      showS);
+    showCtrl (p->hChkGrouping,    showS);
+    showCtrl (p->hChkGenre,       showS);
+    showCtrl (p->hChkOrchestra,   showS);
+    showCtrl (p->hChkLabel,       showS);
+    showCtrl (p->hBtnYearToggle,  showS);
+    showCtrl (p->hComboYearRange, showS);
+    for (int i = 0; i < 5; ++i)
+        showCtrl (p->hBtnHowTabs[i], showS);
 
     InvalidateRect (hwnd, nullptr, TRUE);
 }
@@ -456,9 +525,30 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hChkOrchestra = mkBtn (IDC_CHK_SAME_ORCHESTRA, L"ORCHESTRA");
         p->hChkLabel     = mkBtn (IDC_CHK_SAME_LABEL,     L"LABEL");
 
-        // Year range buttons (replace old spinner+edit)
-        p->hBtnYearToggle = mkBtn (IDC_BTN_YEAR_TOGGLE, L"YEAR: ON");
-        p->hBtnYearValue  = mkBtn (IDC_BTN_YEAR_VALUE,  L"\u00B15 YRS");
+        // Year range controls
+        p->hBtnYearToggle = mkBtn (IDC_BTN_YEAR_TOGGLE, L"YEAR");
+        p->hBtnYearValue  = mkBtn (IDC_BTN_YEAR_VALUE,  L"\u00B15 YRS");  // legacy, hidden
+
+        // Year range combobox (values: 0,1,2,3,5,10)
+        p->hComboYearRange = CreateWindowW (L"COMBOBOX", nullptr,
+                                            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
+                                            0, 0, 10, 120, hwnd,
+                                            (HMENU) IDC_COMBO_YEAR_RANGE, nullptr, nullptr);
+        {
+            static const wchar_t* kYrLabels[] = { L"0 YRS", L"1 YR", L"2 YRS", L"3 YRS", L"5 YRS", L"10 YRS" };
+            static const int      kYrVals[]   = { 0, 1, 2, 3, 5, 10 };
+            for (int i = 0; i < 6; ++i)
+                SendMessageW (p->hComboYearRange, CB_ADDSTRING, 0, (LPARAM) kYrLabels[i]);
+            for (int i = 0; i < 6; ++i)
+                if (kYrVals[i] == p->yearRange) { SendMessageW (p->hComboYearRange, CB_SETCURSEL, i, 0); break; }
+            // Set closed-state height to match filter buttons
+            SendMessageW (p->hComboYearRange, CB_SETITEMHEIGHT, (WPARAM)-1, (LPARAM)(BTN_H - 4));
+        }
+
+        // "How it works" sub-tab buttons (Settings tab)
+        static const wchar_t* kHowNames[] = { L"Overview", L"Track", L"Matches", L"Browser", L"Filters" };
+        for (int i = 0; i < 5; ++i)
+            p->hBtnHowTabs[i] = mkBtn (IDC_BTN_HOW_TAB_0 + i, kHowNames[i]);
 
         // Candidates list
         p->hCandList = CreateWindowW (L"LISTBOX", nullptr,
@@ -505,16 +595,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             SendMessageW (p->hTooltip, TTM_ADDTOOLW, 0, (LPARAM) &ti);
         }
 
-        // Search VDJ button
-        p->hBtnSearchVdj = mkBtn (IDC_BTN_SEARCH_VDJ, L"Search in VDJ");
+        // Find Track button (Matches tab, brand row)
+        p->hBtnSearchVdj = mkBtn (IDC_BTN_SEARCH_VDJ, L"FIND TRACK");
 
-        // Sync year toggle/value button text from loaded settings
-        SetWindowTextW (p->hBtnYearToggle, p->filterUseYearRange ? L"YEAR: ON" : L"YEAR: OFF");
-        {
-            wchar_t ybuf[32];
-            wsprintfW (ybuf, L"\u00B1%d YRS", p->yearRange);
-            SetWindowTextW (p->hBtnYearValue, ybuf);
-        }
+        // Sync year toggle text (just "YEAR" — active state shown by color)
+        SetWindowTextW (p->hBtnYearToggle, L"YEAR");
 
         // Apply font to all children
         if (p->fontNormal)
@@ -550,11 +635,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         RECT bodyR { 0, TOP_H, DLG_W, DLG_H };
         fillRect (hdc, bodyR, TCol::bg);
 
-        // ── Brand text — same position on ALL tabs ────────────────────────────
+        // ── Brand text — Track / Matches / Browse tabs only (not Settings) ───
+        if (p->activeTab != 3)
         {
             const int lx2 = PAD;
             const int lw2 = DLG_W - PAD * 2;
-            RECT brandR { lx2, DLG_H - PAD - BRAND_H, lx2 + lw2, DLG_H - PAD };
+            int brandW = lw2;
+            RECT brandR { lx2, DLG_H - PAD - BRAND_H, lx2 + brandW, DLG_H - PAD };
             drawText (hdc, brandR, L"Tiger Tanda", TCol::accent, p->fontTitle,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
@@ -564,12 +651,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         {
             const int lx = PAD;
             const int lw = DLG_W - PAD * 2;
-            const int bottomRow  = DLG_H - PAD - BRAND_H - 4 - BTN_H;
-            const int detailTop  = bottomRow - DETAIL_BOX_H - 4;
+            const int brandY    = DLG_H - PAD - BRAND_H;
+            const int detailTop = brandY - DETAIL_BOX_H - 4;
             RECT detR { lx, detailTop, lx + lw, detailTop + DETAIL_BOX_H };
 
             if (p->selectedResultIdx >= 0 && p->selectedResultIdx < (int) p->results.size())
-                drawResultDetailBox (hdc, detR, p->results[p->selectedResultIdx], p->fontDetail, p->fontBold);
+                drawResultDetailBox (hdc, detR, p->results[p->selectedResultIdx],
+                                     p->fontDetail, p->fontBold, p->fontSmall);
             else
             {
                 fillRect (hdc, detR, TCol::card);
@@ -601,15 +689,79 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             const int lw  = DLG_W - PAD * 2;
             const int bY  = TOP_H + PAD;
 
-            // "FILTERS" section label
-            RECT filtersR { lx, bY, lx + lw, bY + 16 };
-            drawText (hdc, filtersR, L"FILTERS", TCol::textDim, p->fontSmall,
-                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            // Content area: below how-tab buttons (tabs at bY, h=18; content at bY+22)
+            const int contentY = bY + 18 + 4;
 
-            // Separator between filter buttons and year row
-            // (drawn between row2 buttons and year toggle)
-            // filter rows: bY+20 + 24+6 + 24 = bY+74; year row at bY+74+10
-            int sepY = bY + 20 + 24 + 6 + 24 + 5;
+            if (p->activeHowTab < 4)
+            {
+                static const wchar_t* kContent[4][5] = {
+                    // 0 Overview
+                    { L"\u2022  Select song in VDJ. Use Track Tab to match to database",
+                      L"\u2022  Matches Tab presents similar songs for a tanda",
+                      L"\u2022  FIND TRACK searches for selected song in VDJ",
+                      L"\u2022  Use Settings to specify match criteria",
+                      nullptr },
+                    // 1 Track
+                    { L"\u2022  Browse song in VDJ to auto-detect",
+                      L"\u2022  Choose candidate that matches",
+                      L"\u2022  Use search bar to update if correct match not found",
+                      nullptr, nullptr },
+                    // 2 Matches
+                    { L"\u2022  Displays similar tracks based on selected filters",
+                      L"\u2022  Select song to see additional details",
+                      L"\u2022  FIND TRACK searches for song in VDJ browser",
+                      nullptr, nullptr },
+                    // 3 Browser
+                    { L"\u2022  Displays browser results ranked by relevance",
+                      L"\u2022  Click to focus VDJ on file",
+                      L"\u2022  ADD adds selected file to bottom of playlist",
+                      L"\u2022  Go back to Matches tab for more tracks",
+                      nullptr },
+                };
+                for (int i = 0; i < 5; ++i)
+                {
+                    if (!kContent[p->activeHowTab][i]) break;
+                    RECT br { lx, contentY + i * 15, lx + lw, contentY + i * 15 + 15 };
+                    drawText (hdc, br, kContent[p->activeHowTab][i], TCol::textNormal, p->fontSmall,
+                              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                }
+            }
+            else  // Filters tab — inline bold for keyword terms
+            {
+                // Helper: draw a line with one leading bold word followed by normal text
+                auto drawBoldLine = [&] (int lineIdx, const wchar_t* boldWord,
+                                         const wchar_t* rest, bool hasBold = true)
+                {
+                    int ly = contentY + lineIdx * 15;
+                    int x  = lx;
+                    if (hasBold)
+                    {
+                        SIZE sz {};
+                        SelectObject (hdc, p->fontSmallBold);
+                        GetTextExtentPoint32W (hdc, boldWord, (int) wcslen (boldWord), &sz);
+                        SetBkMode (hdc, TRANSPARENT);
+                        SetTextColor (hdc, TCol::textBright);
+                        ExtTextOutW (hdc, x, ly + (15 - sz.cy) / 2, ETO_CLIPPED,
+                                     nullptr, boldWord, (UINT) wcslen (boldWord), nullptr);
+                        x += sz.cx;
+                    }
+                    if (rest && rest[0])
+                    {
+                        RECT rr { x, ly, lx + lw, ly + 15 };
+                        drawText (hdc, rr, rest, TCol::textNormal, p->fontSmall,
+                                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                    }
+                };
+
+                drawBoldLine (0, nullptr,       L"\u2022  Determine match criteria", false);
+                drawBoldLine (1, L"\u2022  Artist",    L" filters by Bandleader,  Orchestra by orchestra");
+                drawBoldLine (2, L"\u2022  Group",     L" filters by Similar period,  Label by Record label");
+                drawBoldLine (3, L"\u2022  Year",      L" sets max recording year difference (0=same year)");
+            }
+
+            // Separator between descriptions section and filters
+            // sub-tabs at bY (18px) + gap (4px) + content (60px) + gap (4px) = bY+86
+            const int sepY = bY + 18 + 4 + 60 + 4;
             HPEN sep = CreatePen (PS_SOLID, 1, TCol::cardBorder);
             HPEN old = (HPEN) SelectObject (hdc, sep);
             MoveToEx (hdc, lx, sepY, nullptr);
@@ -617,46 +769,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             SelectObject (hdc, old);
             DeleteObject (sep);
 
-            // ── How it works bullets ──────────────────────────────────────────
-            // Position: below year row, above logo
-            // year row bottom ≈ bY + 20 + 54 + 24 + 10 + 24 = bY + 132 = ~180
-            int bulletY = bY + 20 + 54 + 10 + 24 + 16;  // ≈ 172+PAD
-
-            // Separator above bullets
-            int sep2Y = bulletY - 7;
-            HPEN sep2 = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-            HPEN old2 = (HPEN) SelectObject (hdc, sep2);
-            MoveToEx (hdc, lx, sep2Y, nullptr);
-            LineTo   (hdc, lx + lw, sep2Y);
-            SelectObject (hdc, old2);
-            DeleteObject (sep2);
-
-            RECT howR { lx, bulletY - 2, lx + lw, bulletY + 14 };
-            drawText (hdc, howR, L"HOW IT WORKS", TCol::textDim, p->fontSmall,
-                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            bulletY += 16;
-
-            static const wchar_t* bullets[] = {
-                L"\u2022  Browse a song in VDJ to auto-identify it",
-                L"\u2022  Confirm a match in the Track tab",
-                L"\u2022  Browse results in Matches \u2014 click Search in VDJ",
-                L"\u2022  Preview & add the best version from Browse",
-            };
-            for (int i = 0; i < 4; ++i)
-            {
-                RECT br { lx, bulletY, lx + lw, bulletY + 14 };
-                drawText (hdc, br, bullets[i], TCol::textNormal, p->fontSmall,
-                          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                bulletY += 16;
-            }
-
-            // ── Logo (bottom of settings, above brand) ────────────────────────
-            const int logoH    = 46;
+            // ── Logo (fills bottom of settings — no brand text on this tab) ──
+            const int logoH    = 100;  // enlarged to fill space freed by removed headers
             const int logoMaxW = lw;
-            const int logoTop  = DLG_H - PAD - BRAND_H - 6 - logoH;
+            const int logoTop  = DLG_H - PAD - logoH;
             RECT logoRect { lx, logoTop, lx + logoMaxW, logoTop + logoH };
 
-            // Lazy-load the logo
             if (!p->logoImage)
             {
                 fs::path logoPath = p->settingsPath.parent_path() / L"TigerTandaLogoV2.png";
@@ -674,7 +792,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 UINT imgH = img->GetHeight();
                 if (imgW > 0 && imgH > 0)
                 {
-                    // Scale to fit height, preserve aspect ratio, center horizontally
                     int dstH = logoH;
                     int dstW = (int) ((float) imgW / imgH * dstH);
                     if (dstW > logoMaxW) { dstW = logoMaxW; dstH = (int) ((float) imgH / imgW * dstW); }
@@ -997,39 +1114,38 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             p->vdjSend ("playlist_add");
             break;
 
-        // Settings: toggle year range on/off
+        // Settings: toggle year range on/off (color-only feedback — no text change)
         case IDC_BTN_YEAR_TOGGLE:
             p->filterUseYearRange = !p->filterUseYearRange;
-            SetWindowTextW (p->hBtnYearToggle, p->filterUseYearRange ? L"YEAR: ON" : L"YEAR: OFF");
-            if (p->hBtnYearToggle) InvalidateRect (p->hBtnYearToggle, nullptr, FALSE);
-            if (p->hBtnYearValue)  InvalidateRect (p->hBtnYearValue,  nullptr, FALSE);
+            if (p->hBtnYearToggle)  InvalidateRect (p->hBtnYearToggle,  nullptr, FALSE);
+            if (p->hComboYearRange) EnableWindow   (p->hComboYearRange, p->filterUseYearRange);
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
 
-        // Settings: cycle through year range values
-        case IDC_BTN_YEAR_VALUE:
-        {
-            static const int kYearSteps[] = { 2, 3, 5, 8, 10 };
-            static const int kNumSteps    = 5;
-            int nextIdx = 0;
-            for (int i = 0; i < kNumSteps; ++i)
+        // Settings: year range combobox selection
+        case IDC_COMBO_YEAR_RANGE:
+            if (HIWORD (wParam) == CBN_SELCHANGE)
             {
-                if (kYearSteps[i] == p->yearRange)
+                static const int kYrVals[] = { 0, 1, 2, 3, 5, 10 };
+                int sel = (int) SendMessageW (p->hComboYearRange, CB_GETCURSEL, 0, 0);
+                if (sel >= 0 && sel < 6)
                 {
-                    nextIdx = (i + 1) % kNumSteps;
-                    break;
+                    p->yearRange = kYrVals[sel];
+                    p->saveSettings();
+                    if (p->confirmedIdx >= 0) p->runTandaSearch();
                 }
             }
-            p->yearRange = kYearSteps[nextIdx];
-            wchar_t buf[32];
-            wsprintfW (buf, L"\u00B1%d YRS", p->yearRange);
-            SetWindowTextW (p->hBtnYearValue, buf);
-            if (p->hBtnYearValue) InvalidateRect (p->hBtnYearValue, nullptr, FALSE);
-            p->saveSettings();
-            if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
-        }
+
+        // Settings: "How it works" sub-tab selection
+        case IDC_BTN_HOW_TAB_0: case IDC_BTN_HOW_TAB_1: case IDC_BTN_HOW_TAB_2:
+        case IDC_BTN_HOW_TAB_3: case IDC_BTN_HOW_TAB_4:
+            p->activeHowTab = ctrlId - IDC_BTN_HOW_TAB_0;
+            for (int i = 0; i < 5; ++i)
+                if (p->hBtnHowTabs[i]) InvalidateRect (p->hBtnHowTabs[i], nullptr, FALSE);
+            InvalidateRect (hwnd, nullptr, FALSE);
+            break;
 
         // Close
         case IDC_BTN_CLOSE:
@@ -1136,9 +1252,20 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
                 wchar_t ftxt[64] = {};
                 GetWindowTextW (di->hwndItem, ftxt, 64);
-                COLORREF fbg = isOn ? TCol::accent    : TCol::buttonBg;
-                COLORREF ffg = isOn ? TCol::textBright : TCol::textDim;
+                // Darker orange when active (was TCol::accent)
+                COLORREF fbg = isOn ? RGB (160, 75, 20) : TCol::buttonBg;
+                COLORREF ffg = isOn ? TCol::textBright   : TCol::textDim;
                 drawOwnerButton (di, ftxt, fbg, ffg, p->fontSmall);
+                return TRUE;
+            }
+
+            // "How it works" sub-tab buttons
+            if (di->CtlID >= IDC_BTN_HOW_TAB_0 && di->CtlID <= IDC_BTN_HOW_TAB_4)
+            {
+                int idx = di->CtlID - IDC_BTN_HOW_TAB_0;
+                static const wchar_t* kNames[] = { L"Overview", L"Track", L"Matches", L"Browser", L"Filters" };
+                drawTextToggle (di, kNames[idx], p->activeHowTab == idx,
+                                p->fontSmall, p->fontSmall, TCol::bg);
                 return TRUE;
             }
 
@@ -1233,14 +1360,18 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
             int tx = r.left + 5;
-            RECT titleR { tx, r.top, r.right - 82, r.bottom };
+            RECT titleR { tx, r.top, r.right - 46, r.bottom };
             drawText (hdc, titleR, rec.title, TCol::textBright, p->fontBold,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-            if (!rec.date.empty())
+            // Show year only (first 4 chars of date, or rec.year directly)
+            std::wstring yearStr = rec.year.empty()
+                ? (rec.date.size() >= 4 ? rec.date.substr (0, 4) : rec.date)
+                : rec.year;
+            if (!yearStr.empty())
             {
-                RECT dateR { r.right - 80, r.top, r.right - 4, r.bottom };
-                drawText (hdc, dateR, rec.date, TCol::textDim, p->fontNormal,
+                RECT dateR { r.right - 44, r.top, r.right - 4, r.bottom };
+                drawText (hdc, dateR, yearStr, TCol::textDim, p->fontNormal,
                           DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
             }
 
@@ -1345,6 +1476,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             static HBRUSH searchBoxBrush = CreateSolidBrush (searchBg);
             return (LRESULT) searchBoxBrush;
         }
+        SetBkColor   (hdc, TCol::card);
+        SetTextColor (hdc, TCol::textBright);
+        return (LRESULT) (p ? p->cardBrush : GetStockObject (NULL_BRUSH));
+    }
+    case 0x0109:  // WM_CTLCOLORCOMBOBOX
+    {
+        HDC hdc = (HDC) wParam;
         SetBkColor   (hdc, TCol::card);
         SetTextColor (hdc, TCol::textBright);
         return (LRESULT) (p ? p->cardBrush : GetStockObject (NULL_BRUSH));
