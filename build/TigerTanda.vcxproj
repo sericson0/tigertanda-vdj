@@ -123,9 +123,18 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying metadata.csv to VDJ plugin output directory</Message>
+      <Message>Copying metadata.csv to VDJ plugin output directory	Copying TigerTandaLogoV2.png to VDJ plugin output directory</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/metadata.csv C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/Debug/metadata.csv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/TigerTandaLogoV2.png C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/Debug/TigerTandaLogoV2.png
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -193,9 +202,18 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying metadata.csv to VDJ plugin output directory</Message>
+      <Message>Copying metadata.csv to VDJ plugin output directory	Copying TigerTandaLogoV2.png to VDJ plugin output directory</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/metadata.csv C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/Release/metadata.csv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/TigerTandaLogoV2.png C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/Release/TigerTandaLogoV2.png
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -263,9 +281,18 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying metadata.csv to VDJ plugin output directory</Message>
+      <Message>Copying metadata.csv to VDJ plugin output directory	Copying TigerTandaLogoV2.png to VDJ plugin output directory</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/metadata.csv C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/MinSizeRel/metadata.csv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/TigerTandaLogoV2.png C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/MinSizeRel/TigerTandaLogoV2.png
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -332,9 +359,18 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <PostBuildEvent>
-      <Message>Copying metadata.csv to VDJ plugin output directory</Message>
+      <Message>Copying metadata.csv to VDJ plugin output directory	Copying TigerTandaLogoV2.png to VDJ plugin output directory</Message>
       <Command>setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/metadata.csv C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/RelWithDebInfo/metadata.csv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/TigerTandaLogoV2.png C:/Users/seric/OneDrive/Documents/GitHub/tigertanda-vdj/build/RelWithDebInfo/TigerTandaLogoV2.png
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone

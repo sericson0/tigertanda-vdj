@@ -33,6 +33,8 @@ enum CtrlId
     IDC_CHK_SAME_LABEL     = 2306,
     IDC_EDIT_YEAR_RANGE    = 2401,
     IDC_SPIN_YEAR_RANGE    = 2402,
+    IDC_BTN_YEAR_TOGGLE    = 2403,  // toggles whether year range applies
+    IDC_BTN_YEAR_VALUE     = 2404,  // cycles through actual range values
 
     // Matches tab
     IDC_RESULTS_LIST       = 2601,
@@ -51,7 +53,6 @@ enum CtrlId
     IDC_BROWSE_LIST        = 2901,
     IDC_BTN_PRELISTEN      = 2902,
     IDC_BTN_ADD_END        = 2903,
-    IDC_BTN_ADD_AFTER      = 2904,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +61,15 @@ enum CtrlId
 
 inline constexpr UINT_PTR TIMER_BROWSE_POLL   = 1;
 inline constexpr UINT_PTR TIMER_SMART_SEARCH = 2;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Font size constants (pt — passed to createFont)
+// ─────────────────────────────────────────────────────────────────────────────
+
+inline constexpr int FONT_SIZE_NORMAL = 13;  // fontNormal / fontBold
+inline constexpr int FONT_SIZE_SMALL  = 11;  // fontSmall (retained for minor labels)
+inline constexpr int FONT_SIZE_DETAIL = 15;  // fontDetail — secondary rows (+4pt from small)
+inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand text
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants (compact / tab mode only)
@@ -71,12 +81,14 @@ inline constexpr int TOP_H          = 40;    // top bar height (tabs + close)
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;
-inline constexpr int CAND_ITEM_H    = 40;
-inline constexpr int TAB_BTN_H      = 20;   // top tab strip height (4 pts less than BTN_H)
-inline constexpr int RESULT_ITEM_H  = 20;
-inline constexpr int BROWSE_ITEM_H  = 22;
-inline constexpr int DETAIL_BOX_H   = 44;   // 2-row: Bandleader·Singer + Date·Genre·Label
-inline constexpr int PRE_WAVE_H     = 20;   // prelisten waveform height
+inline constexpr int BRAND_H        = 26;    // Tiger Tanda brand text row at bottom
+inline constexpr int CAND_ITEM_H    = 46;    // increased for larger secondary text
+inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
+inline constexpr int RESULT_ITEM_H  = 22;    // increased from 20
+inline constexpr int BROWSE_ITEM_H  = 24;    // increased from 22
+inline constexpr int DETAIL_BOX_H   = 50;    // 2-row: Bandleader·Singer + Date·Genre·Label
+inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
+inline constexpr int TRACK_SEARCH_GAP = 14;  // gap between search row and candidates list
 
 // Window class name
 inline constexpr const wchar_t* WND_CLASS = L"TigerTandaVdjDialog";
@@ -154,6 +166,7 @@ public:
     bool filterSameOrchestra = false;
     bool filterSameLabel     = false;
     int  yearRange           = 5;
+    bool filterUseYearRange  = true;   // whether year range filter applies
 
     // ── Tab ─────────────────────────────────────────────────────────────────
     int  activeTab = 0;       // 0=Track, 1=Matches, 2=Browse, 3=Settings
@@ -209,15 +222,20 @@ public:
     HWND hBrowseList       = nullptr;
     HWND hBtnPrelisten     = nullptr;
     HWND hBtnAddEnd        = nullptr;
-    HWND hBtnAddAfter      = nullptr;
+    HWND hBtnYearToggle    = nullptr;
+    HWND hBtnYearValue     = nullptr;
+    HWND hTooltip          = nullptr;
 
     // ── GDI resources ────────────────────────────────────────────────────────
-    HFONT fontNormal   = nullptr;
-    HFONT fontBold     = nullptr;
-    HFONT fontSmall    = nullptr;
-    HFONT fontTitle    = nullptr;
+    HFONT fontNormal   = nullptr;  // FONT_SIZE_NORMAL pt regular
+    HFONT fontBold     = nullptr;  // FONT_SIZE_NORMAL pt bold
+    HFONT fontSmall    = nullptr;  // FONT_SIZE_SMALL pt regular
+    HFONT fontDetail   = nullptr;  // FONT_SIZE_DETAIL pt regular (secondary rows, +4pt)
+    HFONT fontTitle    = nullptr;  // FONT_SIZE_BRAND pt bold (Tiger Tanda brand text)
     HBRUSH panelBrush  = nullptr;
     HBRUSH cardBrush   = nullptr;
+    ULONG_PTR gdiplusToken = 0;
+    void*     logoImage    = nullptr;  // Gdiplus::Image* cached logo (opaque to avoid header dep)
 
     bool dialogRequestedOpen  = true;
     bool suppressNextHideSync = false;

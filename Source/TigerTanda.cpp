@@ -8,6 +8,9 @@
 #include <cstdio>
 #include <filesystem>
 
+#pragma comment(lib, "gdiplus.lib")
+using namespace Gdiplus;
+
 namespace fs = std::filesystem;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,12 +24,16 @@ TigerTandaPlugin::TigerTandaPlugin()
     icc.dwICC = ICC_BAR_CLASSES | ICC_WIN95_CLASSES;
     InitCommonControlsEx (&icc);
 
-    fontNormal = createFont (13);
-    fontBold   = createFont (13, FW_BOLD);
-    fontTitle  = createFont (20, FW_BOLD);
-    fontSmall  = createFont (11);
+    fontNormal = createFont (FONT_SIZE_NORMAL);
+    fontBold   = createFont (FONT_SIZE_NORMAL, FW_BOLD);
+    fontTitle  = createFont (FONT_SIZE_BRAND,  FW_BOLD);
+    fontSmall  = createFont (FONT_SIZE_SMALL);
+    fontDetail = createFont (FONT_SIZE_DETAIL);
     panelBrush = CreateSolidBrush (TCol::panel);
     cardBrush  = CreateSolidBrush (TCol::card);
+
+    Gdiplus::GdiplusStartupInput gdiplusInput;
+    Gdiplus::GdiplusStartup (&gdiplusToken, &gdiplusInput, nullptr);
 }
 
 TigerTandaPlugin::~TigerTandaPlugin()
@@ -36,8 +43,12 @@ TigerTandaPlugin::~TigerTandaPlugin()
     if (fontBold)   DeleteObject (fontBold);
     if (fontTitle)  DeleteObject (fontTitle);
     if (fontSmall)  DeleteObject (fontSmall);
+    if (fontDetail) DeleteObject (fontDetail);
     if (panelBrush) DeleteObject (panelBrush);
     if (cardBrush)  DeleteObject (cardBrush);
+    delete reinterpret_cast<Gdiplus::Image*> (logoImage);
+    logoImage = nullptr;
+    if (gdiplusToken) Gdiplus::GdiplusShutdown (gdiplusToken);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,6 +282,8 @@ void TigerTandaPlugin::loadSettings()
                 filterSameOrchestra = (val != "0");
             else if (key == "sameLabel")
                 filterSameLabel = (val != "0");
+            else if (key == "useYearRange")
+                filterUseYearRange = (val != "0");
             else if (key == "yearRange")
             {
                 yearRange = std::stoi (val);
@@ -301,6 +314,7 @@ void TigerTandaPlugin::saveSettings()
     out << "sameGenre=" << (filterSameGenre ? 1 : 0) << "\n";
     out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
     out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
+    out << "useYearRange=" << (filterUseYearRange ? 1 : 0) << "\n";
     out << "yearRange=" << yearRange << "\n";
     out << "activeTab=" << activeTab << "\n";
 }

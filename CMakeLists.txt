@@ -61,3 +61,11 @@ add_custom_command(TARGET TigerTanda POST_BUILD
         "$<TARGET_FILE_DIR:TigerTanda>/metadata.csv"
     COMMENT "Copying metadata.csv to VDJ plugin output directory"
 )
+
+# Copy logo PNG next to the VDJ plugin DLL
+add_custom_command(TARGET TigerTanda POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/TigerTandaLogoV2.png"
+        "$<TARGET_FILE_DIR:TigerTanda>/TigerTandaLogoV2.png"
+    COMMENT "Copying TigerTandaLogoV2.png to VDJ plugin output directory"
+)

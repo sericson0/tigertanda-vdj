@@ -143,7 +143,7 @@ void TigerTandaPlugin::runTandaSearch()
         if (filterSameLabel     && !wiequal (rec.label,      ref.label))      continue;
 
         // Year range filter
-        if (yearRange > 0 && refYear > 0)
+        if (filterUseYearRange && yearRange > 0 && refYear > 0)
         {
             int recYear = parseYear (rec.year);
             if (recYear > 0 && std::abs (recYear - refYear) > yearRange)
