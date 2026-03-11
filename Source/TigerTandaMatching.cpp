@@ -181,7 +181,8 @@ void TigerTandaPlugin::runTandaSearch()
 
 void TigerTandaPlugin::runSmartSearch()
 {
-    int totalItems = (int) vdjGetValue ("browser_count");
+    // Use file_count (the correct VDJ API — browser_count does not exist)
+    int totalItems = (int) vdjGetValue ("file_count");
     if (totalItems <= 0)
     {
         // VDJ hasn't populated results yet — retry in 300ms (keep pending=true)
@@ -192,10 +193,9 @@ void TigerTandaPlugin::runSmartSearch()
 
     smartSearchPending = false;
 
-    const int limit = totalItems < 200 ? totalItems : 200;
+    const int limit = totalItems < 50 ? totalItems : 50;
     int targetYear = parseYear (searchTargetYear);
 
-    // Read all VDJ browser items and score them
     struct ScoredItem
     {
         BrowseItem item;
@@ -203,30 +203,22 @@ void TigerTandaPlugin::runSmartSearch()
     };
     std::vector<ScoredItem> scored;
 
+    // Scroll to top then read each item one by one — the correct VDJ pattern
+    // (get_browser_file does not exist; use browser_scroll + get_browsed_song)
+    vdjSend ("browser_scroll 'top'");
+    Sleep (20);
+
     for (int i = 0; i < limit; ++i)
     {
-        std::string sq1 = "get_browser_file " + std::to_string (i) + " 'title'";
-        std::string sq2 = "get_browser_file " + std::to_string (i) + " 'artist'";
-        std::string sq3 = "get_browser_file " + std::to_string (i) + " 'year'";
-        std::string sq4 = "get_browser_file " + std::to_string (i) + " 'stars'";
-        std::string sq5 = "get_browser_file " + std::to_string (i) + " 'play_count'";
-
         BrowseItem bi;
-        bi.title        = vdjGetString (sq1.c_str());
-        bi.artist       = vdjGetString (sq2.c_str());
-        bi.year         = vdjGetString (sq3.c_str());
+        bi.title        = vdjGetString ("get_browsed_song 'title'");
+        bi.artist       = vdjGetString ("get_browsed_song 'artist'");
+        bi.year         = vdjGetString ("get_browsed_song 'year'");
+        bi.filePath     = vdjGetString ("get_browsed_filepath");
         bi.browserIndex = i;
 
-        if (bi.title.empty() && bi.artist.empty()) break;
-
-        // Read stars and play count
-        double starsVal    = vdjGetValue (sq4.c_str());
-        double playVal     = vdjGetValue (sq5.c_str());
-        int    stars       = (int) starsVal;
-        int    playCount   = (int) playVal;
-        if (stars < 0) stars = 0;
-        if (stars > 5) stars = 5;
-        if (playCount < 0) playCount = 0;
+        if (bi.title.empty() && bi.artist.empty())
+            break;
 
         // Score components (each 0-100)
         float artistScore = 0.0f;
@@ -248,9 +240,17 @@ void TigerTandaPlugin::runSmartSearch()
             }
         }
 
-        float starsNorm    = (float) stars * 20.0f;     // 0-100
+        double starsVal  = vdjGetValue ("get_browsed_song 'stars'");
+        double playVal   = vdjGetValue ("get_browsed_song 'playcount'");
+        int    stars     = (int) starsVal;
+        int    playCount = (int) playVal;
+        if (stars < 0) stars = 0;
+        if (stars > 5) stars = 5;
+        if (playCount < 0) playCount = 0;
+
+        float starsNorm    = (float) stars * 20.0f;
         float playRaw      = (float) playCount * 5.0f;
-        float playNorm     = (playRaw < 100.0f) ? playRaw : 100.0f;  // 20+ plays = max
+        float playNorm     = (playRaw < 100.0f) ? playRaw : 100.0f;
         float qualityScore = (starsNorm + playNorm) / 2.0f;
 
         // Composite: artist 40%, title 40%, year 10%, quality 10%
@@ -259,6 +259,12 @@ void TigerTandaPlugin::runSmartSearch()
 
         bi.score = composite;
         scored.push_back ({ bi, composite });
+
+        if (i + 1 < limit)
+        {
+            vdjSend ("browser_scroll +1");
+            Sleep (10);
+        }
     }
 
     // Sort by composite score descending

@@ -670,36 +670,64 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
 
         // ── Poll VDJ browser list contents (skip while smart search pending) ──
+        // Uses file_count + get_browsed_folder_path + filesystem enumeration,
+        // matching TigerTag's proven pattern. get_browser_file does not exist in VDJ API.
         if (!p->smartSearchPending)
         {
-            double rawCount = p->vdjGetValue ("browser_count");
-            int newCount = (int) rawCount;
-            if (newCount != p->browseListCount)
+            int newCount = (int) p->vdjGetValue ("file_count");
+            std::wstring curFolder = p->vdjGetString ("get_browsed_folder_path");
+
+            if (newCount != p->browseListCount || curFolder != p->lastBrowseFolder)
             {
-                p->browseListCount = newCount;
+                p->browseListCount  = newCount;
+                p->lastBrowseFolder = curFolder;
                 p->browseItems.clear();
 
-                const int limit = newCount < 200 ? newCount : 200;
-                for (int bi_n = 0; bi_n < limit; ++bi_n)
+                // Only enumerate when VDJ is showing a real folder (not search results).
+                // When curFolder is empty (search results), leave browseItems alone so
+                // smart search results are not overwritten.
+                if (!curFolder.empty() && newCount > 0)
                 {
-                    std::string sq1 = "get_browser_file " + std::to_string (bi_n) + " 'title'";
-                    std::string sq2 = "get_browser_file " + std::to_string (bi_n) + " 'artist'";
-                    std::string sq3 = "get_browser_file " + std::to_string (bi_n) + " 'year'";
+                    static const wchar_t* kAudioExts[] = {
+                        L".mp3", L".flac", L".wav", L".aiff", L".aif",
+                        L".ogg", L".m4a", L".wma", L".aac", nullptr
+                    };
+                    auto isAudioExt = [] (const fs::path& fp) -> bool {
+                        std::wstring ext = fp.extension().wstring();
+                        for (wchar_t& c : ext) c = towlower (c);
+                        for (int k = 0; kAudioExts[k]; ++k)
+                            if (ext == kAudioExts[k]) return true;
+                        return false;
+                    };
 
-                    BrowseItem bi;
-                    bi.title  = p->vdjGetString (sq1.c_str());
-                    bi.artist = p->vdjGetString (sq2.c_str());
-                    bi.year   = p->vdjGetString (sq3.c_str());
+                    try
+                    {
+                        for (const auto& e : fs::directory_iterator (fs::path (curFolder)))
+                        {
+                            bool isDir = false;
+                            try { isDir = e.is_directory(); } catch (...) {}
+                            if (isDir) continue;
+                            if (!isAudioExt (e.path())) continue;
 
-                    if (bi.title.empty() && bi.artist.empty()) break;
-                    p->browseItems.push_back (bi);
-                }
+                            BrowseItem bi;
+                            bi.filePath     = e.path().wstring();
+                            bi.title        = e.path().stem().wstring();
+                            bi.browserIndex = -1;
+                            p->browseItems.push_back (bi);
+                        }
+                        std::sort (p->browseItems.begin(), p->browseItems.end(),
+                                   [] (const BrowseItem& a, const BrowseItem& b) {
+                                       return _wcsicmp (a.title.c_str(), b.title.c_str()) < 0;
+                                   });
+                    }
+                    catch (...) {}
 
-                if (p->hBrowseList)
-                {
-                    SendMessageW (p->hBrowseList, LB_RESETCONTENT, 0, 0);
-                    for (int i = 0; i < (int) p->browseItems.size(); ++i)
-                        SendMessageW (p->hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
+                    if (p->hBrowseList)
+                    {
+                        SendMessageW (p->hBrowseList, LB_RESETCONTENT, 0, 0);
+                        for (int i = 0; i < (int) p->browseItems.size(); ++i)
+                            SendMessageW (p->hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
+                    }
                 }
             }
         }

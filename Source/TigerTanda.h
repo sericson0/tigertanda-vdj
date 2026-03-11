@@ -165,7 +165,8 @@ public:
 
     // ── Browse history ───────────────────────────────────────────────────────
     std::vector<BrowseItem> browseItems;   // current VDJ browser list, cap ~200
-    int  browseListCount = -1;             // cached browser_count for change detection
+    int  browseListCount = -1;             // cached file_count for change detection
+    std::wstring lastBrowseFolder;         // cached get_browsed_folder_path for change detection
 
     // ── Smart search (ranked VDJ browser results) ────────────────────────────
     std::wstring searchTargetTitle;
