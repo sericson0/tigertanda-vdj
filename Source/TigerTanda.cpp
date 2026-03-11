@@ -284,6 +284,8 @@ void TigerTandaPlugin::loadSettings()
                 filterSameOrchestra = (val != "0");
             else if (key == "sameLabel")
                 filterSameLabel = (val != "0");
+            else if (key == "sameTrack")
+                filterSameTrack = (val != "0");
             else if (key == "useYearRange")
                 filterUseYearRange = (val != "0");
             else if (key == "yearRange")
@@ -316,6 +318,7 @@ void TigerTandaPlugin::saveSettings()
     out << "sameGenre=" << (filterSameGenre ? 1 : 0) << "\n";
     out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
     out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
+    out << "sameTrack=" << (filterSameTrack ? 1 : 0) << "\n";
     out << "useYearRange=" << (filterUseYearRange ? 1 : 0) << "\n";
     out << "yearRange=" << yearRange << "\n";
     out << "activeTab=" << activeTab << "\n";

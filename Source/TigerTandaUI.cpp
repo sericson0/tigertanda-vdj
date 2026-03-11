@@ -408,14 +408,10 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hChkOrchestra, lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
         sy += btnH + 4;
 
-        // Year row (centered): [YEAR toggle][year range combobox]
-        const int ytW = 60;
-        const int ycW = 90;
-        const int yearRowTotalW = ytW + 6 + ycW;  // 156
-        const int yearX = lx + (lw - yearRowTotalW) / 2;
-        MoveWindow (p->hBtnYearToggle,  yearX,          sy, ytW, btnH,       FALSE);
-        // Combobox height includes dropdown — add 120 for the drop-down list area
-        MoveWindow (p->hComboYearRange, yearX + ytW + 6, sy, ycW, btnH + 110, FALSE);
+        // Filter Row 3: TRACK, YEAR, ±N YRS
+        MoveWindow (p->hChkTrack,       lx,                    sy, colW, btnH, FALSE);
+        MoveWindow (p->hBtnYearToggle,  lx + colW + gap,       sy, colW, btnH, FALSE);
+        MoveWindow (p->hBtnYearRange,   lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
 
     }
     showCtrl (p->hChkArtist,      showS);
@@ -424,8 +420,9 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     showCtrl (p->hChkGenre,       showS);
     showCtrl (p->hChkOrchestra,   showS);
     showCtrl (p->hChkLabel,       showS);
+    showCtrl (p->hChkTrack,       showS);
     showCtrl (p->hBtnYearToggle,  showS);
-    showCtrl (p->hComboYearRange, showS);
+    showCtrl (p->hBtnYearRange,   showS);
     for (int i = 0; i < 5; ++i)
         showCtrl (p->hBtnHowTabs[i], showS);
 
@@ -506,8 +503,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         {
             HWND tracked[] = {
                 p->hBtnClose, p->hBtnSearch, p->hBtnSearchVdj, p->hBtnPrelisten,
-                p->hBtnAddEnd, p->hBtnYearToggle, p->hChkArtist, p->hChkSinger,
+                p->hBtnAddEnd, p->hBtnYearToggle, p->hBtnYearRange,
+                p->hChkArtist, p->hChkSinger,
                 p->hChkGrouping, p->hChkGenre, p->hChkOrchestra, p->hChkLabel,
+                p->hChkTrack,
                 p->hBtnTabTrack, p->hBtnTabMatches, p->hBtnTabBrowse, p->hBtnTabSettings,
                 p->hBtnHowTabs[0], p->hBtnHowTabs[1], p->hBtnHowTabs[2],
                 p->hBtnHowTabs[3], p->hBtnHowTabs[4]
@@ -567,23 +566,18 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hChkGenre     = mkBtn (IDC_CHK_SAME_GENRE,     L"GENRE");
         p->hChkOrchestra = mkBtn (IDC_CHK_SAME_ORCHESTRA, L"ORCHESTRA");
         p->hChkLabel     = mkBtn (IDC_CHK_SAME_LABEL,     L"LABEL");
+        p->hChkTrack     = mkBtn (IDC_CHK_SAME_TRACK,     L"TRACK");
 
         // Year range controls
         p->hBtnYearToggle = mkBtn (IDC_BTN_YEAR_TOGGLE, L"YEAR");
-        // Year range combobox (values: 0,1,2,3,5,10)
-        p->hComboYearRange = CreateWindowW (L"COMBOBOX", nullptr,
-                                            WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-                                            0, 0, 10, 120, hwnd,
-                                            (HMENU) IDC_COMBO_YEAR_RANGE, nullptr, nullptr);
+        // Year range button (cycles through values on click)
         {
-            static const wchar_t* kYrLabels[] = { L"0 YRS", L"1 YR", L"2 YRS", L"3 YRS", L"5 YRS", L"10 YRS" };
+            static const wchar_t* kYrLabels[] = { L"\u00B10 YRS", L"\u00B11 YR", L"\u00B12 YRS", L"\u00B13 YRS", L"\u00B15 YRS", L"\u00B110 YRS" };
             static const int      kYrVals[]   = { 0, 1, 2, 3, 5, 10 };
+            int initIdx = 0;
             for (int i = 0; i < 6; ++i)
-                SendMessageW (p->hComboYearRange, CB_ADDSTRING, 0, (LPARAM) kYrLabels[i]);
-            for (int i = 0; i < 6; ++i)
-                if (kYrVals[i] == p->yearRange) { SendMessageW (p->hComboYearRange, CB_SETCURSEL, i, 0); break; }
-            // Set closed-state height to match filter buttons (item height + ~4px border = btnH)
-            SendMessageW (p->hComboYearRange, CB_SETITEMHEIGHT, (WPARAM)-1, (LPARAM)(BTN_H - 8));
+                if (kYrVals[i] == p->yearRange) { initIdx = i; break; }
+            p->hBtnYearRange = mkBtn (IDC_BTN_YEAR_RANGE, kYrLabels[initIdx]);
         }
 
         // "How it works" sub-tab buttons (Settings tab)
@@ -656,8 +650,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             addTip (p->hChkGenre,        L"Filter: same genre");
             addTip (p->hChkOrchestra,    L"Filter: same orchestra");
             addTip (p->hChkLabel,        L"Filter: same record label");
+            addTip (p->hChkTrack,        L"Filter: same track title");
             addTip (p->hBtnYearToggle,   L"Toggle year-range filter on/off");
-            addTip (p->hComboYearRange,  L"Maximum year difference for matches");
+            addTip (p->hBtnYearRange,    L"Click to cycle year range");
         }
 
         // Sync year toggle text (just "YEAR" — active state shown by color)
@@ -1095,6 +1090,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             p->filterSameLabel = !p->filterSameLabel;
             if (p->hChkLabel) InvalidateRect (p->hChkLabel, nullptr, FALSE);
             p->saveSettings(); if (p->confirmedIdx >= 0) p->runTandaSearch(); break;
+        case IDC_CHK_SAME_TRACK:
+            p->filterSameTrack = !p->filterSameTrack;
+            if (p->hChkTrack) InvalidateRect (p->hChkTrack, nullptr, FALSE);
+            p->saveSettings(); if (p->confirmedIdx >= 0) p->runTandaSearch(); break;
 
         // Search VDJ browser (with diacritic normalization) then switch to Browse
         case IDC_BTN_SEARCH_VDJ:
@@ -1176,25 +1175,27 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case IDC_BTN_YEAR_TOGGLE:
             p->filterUseYearRange = !p->filterUseYearRange;
             if (p->hBtnYearToggle)  InvalidateRect (p->hBtnYearToggle,  nullptr, FALSE);
-            if (p->hComboYearRange) EnableWindow   (p->hComboYearRange, p->filterUseYearRange);
+            if (p->hBtnYearRange) InvalidateRect (p->hBtnYearRange, nullptr, FALSE);
             p->saveSettings();
             if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
 
-        // Settings: year range combobox selection
-        case IDC_COMBO_YEAR_RANGE:
-            if (HIWORD (wParam) == CBN_SELCHANGE)
-            {
-                static const int kYrVals[] = { 0, 1, 2, 3, 5, 10 };
-                int sel = (int) SendMessageW (p->hComboYearRange, CB_GETCURSEL, 0, 0);
-                if (sel >= 0 && sel < 6)
-                {
-                    p->yearRange = kYrVals[sel];
-                    p->saveSettings();
-                    if (p->confirmedIdx >= 0) p->runTandaSearch();
-                }
-            }
+        // Settings: year range button (cycles through values)
+        case IDC_BTN_YEAR_RANGE:
+        {
+            static const int      kYrVals[]   = { 0, 1, 2, 3, 5, 10 };
+            static const wchar_t* kYrLabels[] = { L"\u00B10 YRS", L"\u00B11 YR", L"\u00B12 YRS", L"\u00B13 YRS", L"\u00B15 YRS", L"\u00B110 YRS" };
+            int curIdx = 0;
+            for (int i = 0; i < 6; ++i)
+                if (kYrVals[i] == p->yearRange) { curIdx = i; break; }
+            curIdx = (curIdx + 1) % 6;
+            p->yearRange = kYrVals[curIdx];
+            if (p->hBtnYearRange) SetWindowTextW (p->hBtnYearRange, kYrLabels[curIdx]);
+            if (p->hBtnYearRange) InvalidateRect (p->hBtnYearRange, nullptr, FALSE);
+            p->saveSettings();
+            if (p->confirmedIdx >= 0) p->runTandaSearch();
             break;
+        }
 
         // Settings: "How it works" sub-tab selection
         case IDC_BTN_HOW_TAB_0: case IDC_BTN_HOW_TAB_1: case IDC_BTN_HOW_TAB_2:
@@ -1299,7 +1300,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Filter toggle buttons
             if (di->CtlID == IDC_CHK_SAME_ARTIST    || di->CtlID == IDC_CHK_SAME_SINGER   ||
                 di->CtlID == IDC_CHK_SAME_GROUPING  || di->CtlID == IDC_CHK_SAME_GENRE    ||
-                di->CtlID == IDC_CHK_SAME_ORCHESTRA  || di->CtlID == IDC_CHK_SAME_LABEL)
+                di->CtlID == IDC_CHK_SAME_ORCHESTRA  || di->CtlID == IDC_CHK_SAME_LABEL   ||
+                di->CtlID == IDC_CHK_SAME_TRACK)
             {
                 bool isOn = false;
                 switch (di->CtlID)
@@ -1310,6 +1312,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     case IDC_CHK_SAME_GENRE:     isOn = p->filterSameGenre;     break;
                     case IDC_CHK_SAME_ORCHESTRA: isOn = p->filterSameOrchestra; break;
                     case IDC_CHK_SAME_LABEL:     isOn = p->filterSameLabel;     break;
+                    case IDC_CHK_SAME_TRACK:     isOn = p->filterSameTrack;     break;
                 }
                 wchar_t ftxt[64] = {};
                 GetWindowTextW (di->hwndItem, ftxt, 64);
@@ -1346,13 +1349,20 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             else if (di->CtlID == IDC_BTN_ADD_END)       { bg = RGB (28, 55, 28);  fg = TCol::textBright; }
             else if (di->CtlID == IDC_BTN_YEAR_TOGGLE)
             {
-                bg = p->filterUseYearRange ? RGB (160, 75, 20) : TCol::buttonBg;  // matches filter buttons
+                bg = p->filterUseYearRange ? RGB (160, 75, 20) : TCol::buttonBg;
+                fg = p->filterUseYearRange ? TCol::textBright   : TCol::textDim;
+            }
+            else if (di->CtlID == IDC_BTN_YEAR_RANGE)
+            {
+                bg = p->filterUseYearRange ? RGB (160, 75, 20) : TCol::buttonBg;
                 fg = p->filterUseYearRange ? TCol::textBright   : TCol::textDim;
             }
 
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
             bool passHover = (di->CtlID != IDC_BTN_CLOSE) && btnHovered;
-            drawOwnerButton (di, label, bg, fg, p->fontNormal, passHover);
+            HFONT btnFont = (di->CtlID == IDC_BTN_YEAR_TOGGLE || di->CtlID == IDC_BTN_YEAR_RANGE)
+                            ? p->fontSmall : p->fontNormal;
+            drawOwnerButton (di, label, bg, fg, btnFont, passHover);
             return TRUE;
         }
 

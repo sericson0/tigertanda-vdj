@@ -141,6 +141,7 @@ void TigerTandaPlugin::runTandaSearch()
         if (filterSameGenre     && !wiequal (rec.genre,      ref.genre))      continue;
         if (filterSameOrchestra && !wiequal (rec.orchestra,  ref.orchestra))  continue;
         if (filterSameLabel     && !wiequal (rec.label,      ref.label))      continue;
+        if (filterSameTrack     && !wiequal (rec.title,      ref.title))      continue;
 
         // Year range filter
         if (filterUseYearRange && yearRange > 0 && refYear > 0)
@@ -221,9 +222,27 @@ void TigerTandaPlugin::runSmartSearch()
             break;
 
         // Score components (each 0-100)
+        // Artist matching: handle partial names and separators
+        // e.g., "Troilo", "Troilo - Fiorentino", "Troilo / Fiorentino"
+        // should all match "Anibal Troilo" equally
         float artistScore = 0.0f;
         if (!searchTargetArtist.empty() && !bi.artist.empty())
-            artistScore = TangoMatcher::tokenSortRatio (searchTargetArtist, bi.artist);
+        {
+            // Split VDJ artist on common separators (- / & feat. ft.)
+            auto vdjParts = TangoMatcher::splitArtistParts (bi.artist);
+
+            // Check each part of the VDJ artist against our bandleader
+            float bestPartScore = 0.0f;
+            for (auto& part : vdjParts)
+            {
+                float s = TangoMatcher::artistMatchScore (part, searchTargetArtist);
+                if (s > bestPartScore) bestPartScore = s;
+            }
+
+            // Also try the full string in case it's just the full name
+            float fullScore = TangoMatcher::artistMatchScore (bi.artist, searchTargetArtist);
+            artistScore = (bestPartScore > fullScore) ? bestPartScore : fullScore;
+        }
 
         float titleScore = 0.0f;
         if (!searchTargetTitle.empty() && !bi.title.empty())

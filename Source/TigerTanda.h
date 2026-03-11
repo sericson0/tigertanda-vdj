@@ -31,8 +31,9 @@ enum CtrlId
     IDC_CHK_SAME_GENRE     = 2304,
     IDC_CHK_SAME_ORCHESTRA = 2305,
     IDC_CHK_SAME_LABEL     = 2306,
+    IDC_CHK_SAME_TRACK     = 2307,
     IDC_BTN_YEAR_TOGGLE    = 2403,  // toggles whether year range applies
-    IDC_COMBO_YEAR_RANGE   = 2405,  // dropdown for year range
+    IDC_BTN_YEAR_RANGE     = 2405,  // cycles through year range values
 
     // Matches tab
     IDC_RESULTS_LIST       = 2601,
@@ -168,6 +169,7 @@ public:
     bool filterSameGenre     = true;
     bool filterSameOrchestra = false;
     bool filterSameLabel     = false;
+    bool filterSameTrack     = false;
     int  yearRange           = 5;
     bool filterUseYearRange  = true;   // whether year range filter applies
 
@@ -214,6 +216,7 @@ public:
     HWND hChkGenre         = nullptr;
     HWND hChkOrchestra     = nullptr;
     HWND hChkLabel         = nullptr;
+    HWND hChkTrack         = nullptr;
     HWND hResultsList      = nullptr;
     HWND hBtnSearchVdj     = nullptr;
     HWND hBtnClose         = nullptr;
@@ -225,7 +228,7 @@ public:
     HWND hBtnPrelisten     = nullptr;
     HWND hBtnAddEnd        = nullptr;
     HWND hBtnYearToggle    = nullptr;
-    HWND hComboYearRange   = nullptr;
+    HWND hBtnYearRange   = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
     HWND hoveredBtn        = nullptr;   // currently hovered owner-draw button (for hover highlight)
