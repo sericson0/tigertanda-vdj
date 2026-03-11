@@ -181,10 +181,16 @@ void TigerTandaPlugin::runTandaSearch()
 
 void TigerTandaPlugin::runSmartSearch()
 {
-    smartSearchPending = false;
-
     int totalItems = (int) vdjGetValue ("browser_count");
-    if (totalItems <= 0) return;
+    if (totalItems <= 0)
+    {
+        // VDJ hasn't populated results yet — retry in 300ms (keep pending=true)
+        if (hDlg)
+            SetTimer (hDlg, TIMER_SMART_SEARCH, 300, nullptr);
+        return;
+    }
+
+    smartSearchPending = false;
 
     const int limit = totalItems < 200 ? totalItems : 200;
     int targetYear = parseYear (searchTargetYear);

@@ -815,8 +815,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 std::wstring query = normalizeForSearch (rec.title);
                 if (!rec.bandleader.empty()) query += L" " + normalizeForSearch (rec.bandleader);
                 std::string cmd = "search \"" + toUtf8 (query) + "\"";
-                p->vdjSend (cmd);
+
+                // Switch to songs window first so search targets the right list,
+                // then issue the search command
                 p->vdjSend ("browser_window 'songs'");
+                p->vdjSend (cmd);
 
                 // Store target for smart search scoring
                 p->searchTargetTitle  = rec.title;
@@ -824,8 +827,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 p->searchTargetYear   = rec.year;
                 p->smartSearchPending = true;
 
-                // Fire smart search after 200ms to let VDJ populate results
-                SetTimer (hwnd, TIMER_SMART_SEARCH, 200, nullptr);
+                // Fire smart search after 500ms to let VDJ populate results
+                SetTimer (hwnd, TIMER_SMART_SEARCH, 500, nullptr);
 
                 // Switch to Browse tab so user sees results
                 p->activeTab = 2;
