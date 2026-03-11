@@ -75,7 +75,8 @@ inline constexpr int TOP_H          = 40;    // top bar height (tabs + close)
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;
-inline constexpr int CAND_ITEM_H    = 34;
+inline constexpr int CAND_ITEM_H    = 40;
+inline constexpr int TAB_BTN_H      = 20;   // top tab strip height (4 pts less than BTN_H)
 inline constexpr int RESULT_ITEM_H  = 20;
 inline constexpr int BROWSE_ITEM_H  = 22;
 inline constexpr int DETAIL_BOX_H   = 44;   // 2-row: Bandleader·Singer + Date·Genre·Label
@@ -92,6 +93,7 @@ struct BrowseItem
 {
     std::wstring title;
     std::wstring artist;
+    std::wstring year;
     std::wstring filePath;
 };
 
@@ -167,7 +169,8 @@ public:
     std::wstring lastSeenBrowsePath;
 
     // ── Browse history ───────────────────────────────────────────────────────
-    std::vector<BrowseItem> browseItems;   // most-recent first, cap ~50
+    std::vector<BrowseItem> browseItems;   // current VDJ browser list, cap ~200
+    int  browseListCount = -1;             // cached browser_count for change detection
 
     // ── Prelisten ────────────────────────────────────────────────────────────
     bool              prelistenActive    = false;
