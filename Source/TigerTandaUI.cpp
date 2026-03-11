@@ -417,10 +417,6 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         // Combobox height includes dropdown — add 120 for the drop-down list area
         MoveWindow (p->hComboYearRange, yearX + ytW + 6, sy, ycW, btnH + 110, FALSE);
 
-        // Hide legacy year controls
-        showCtrl (p->hEditYearRange, false);
-        showCtrl (p->hSpinYear,      false);
-        showCtrl (p->hBtnYearValue,  false);
     }
     showCtrl (p->hChkArtist,      showS);
     showCtrl (p->hChkSinger,      showS);
@@ -574,8 +570,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         // Year range controls
         p->hBtnYearToggle = mkBtn (IDC_BTN_YEAR_TOGGLE, L"YEAR");
-        p->hBtnYearValue  = mkBtn (IDC_BTN_YEAR_VALUE,  L"\u00B15 YRS");  // legacy, hidden
-
         // Year range combobox (values: 0,1,2,3,5,10)
         p->hComboYearRange = CreateWindowW (L"COMBOBOX", nullptr,
                                             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
@@ -766,7 +760,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     // 0 Overview
                     { L"\u2022  Tiger Tanda helps you build tandas",
                       L"\u2022  Matches song to other tracks that can work in a tanda",
-                      L"\u2022  Options to customize matching criteria.",
+                      L"\u2022  Options to customize matching criteria",
                       nullptr },
                     // 1 Track
                     { L"\u2022 Select track in VDJ",
@@ -776,7 +770,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     // 2 Matches
                     { L"\u2022  Show similar tracks based on set filters",
                       L"\u2022  Select track to see details below",
-                      L"\u2022  Click FIND to search forselected track",
+                      L"\u2022  Click FIND to search for selected track",
                       nullptr, nullptr },
                     // 3 Browser
                     { L"\u2022  Display ranked search results",
@@ -1355,11 +1349,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 bg = p->filterUseYearRange ? RGB (160, 75, 20) : TCol::buttonBg;  // matches filter buttons
                 fg = p->filterUseYearRange ? TCol::textBright   : TCol::textDim;
             }
-            else if (di->CtlID == IDC_BTN_YEAR_VALUE)
-            {
-                bg = p->filterUseYearRange ? RGB (35, 50, 70) : TCol::buttonBg;
-                fg = p->filterUseYearRange ? TCol::textBright  : TCol::textDim;
-            }
 
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
             bool passHover = (di->CtlID != IDC_BTN_CLOSE) && btnHovered;
@@ -1506,24 +1495,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         break;
     }
 
-    // ── Year range spinner ───────────────────────────────────────────────────
-    case WM_NOTIFY:
-    {
-        auto* nm = reinterpret_cast<NMHDR*> (lParam);
-        if (!nm || !p) break;
-        if (nm->idFrom == IDC_SPIN_YEAR_RANGE && nm->code == UDN_DELTAPOS)
-        {
-            auto* ud = reinterpret_cast<NMUPDOWN*> (lParam);
-            int nv = ud->iPos + ud->iDelta;
-            if (nv < 0)  nv = 0;
-            if (nv > 20) nv = 20;
-            p->yearRange = nv;
-            p->saveSettings();
-            if (p->confirmedIdx >= 0) p->runTandaSearch();
-        }
-        break;
-    }
-
     // ── Control colours ──────────────────────────────────────────────────────
     case WM_CTLCOLORBTN:
     {
@@ -1573,13 +1544,3 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     return DefWindowProcW (hwnd, msg, wParam, lParam);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  UI helper implementations
-// ─────────────────────────────────────────────────────────────────────────────
-
-void TigerTandaPlugin::repaintTopBar()
-{
-    if (!hDlg) return;
-    RECT r { 0, 0, DLG_W, TOP_H };
-    InvalidateRect (hDlg, &r, FALSE);
-}

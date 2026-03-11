@@ -31,10 +31,7 @@ enum CtrlId
     IDC_CHK_SAME_GENRE     = 2304,
     IDC_CHK_SAME_ORCHESTRA = 2305,
     IDC_CHK_SAME_LABEL     = 2306,
-    IDC_EDIT_YEAR_RANGE    = 2401,
-    IDC_SPIN_YEAR_RANGE    = 2402,
     IDC_BTN_YEAR_TOGGLE    = 2403,  // toggles whether year range applies
-    IDC_BTN_YEAR_VALUE     = 2404,  // cycles through actual range values (legacy)
     IDC_COMBO_YEAR_RANGE   = 2405,  // dropdown for year range
 
     // Matches tab
@@ -150,8 +147,6 @@ public:
     void loadMetadata();
 
     // UI helpers (TigerTandaUI.cpp)
-    void repaintRefCard() {}   // no-op kept for compat
-    void repaintTopBar();
 
     // Parameter IDs for VDJ parameter panel
     enum ParamId { PID_SEARCH = 0, PID_FIND, PID_RESET };
@@ -219,8 +214,6 @@ public:
     HWND hChkGenre         = nullptr;
     HWND hChkOrchestra     = nullptr;
     HWND hChkLabel         = nullptr;
-    HWND hEditYearRange    = nullptr;
-    HWND hSpinYear         = nullptr;
     HWND hResultsList      = nullptr;
     HWND hBtnSearchVdj     = nullptr;
     HWND hBtnClose         = nullptr;
@@ -232,7 +225,6 @@ public:
     HWND hBtnPrelisten     = nullptr;
     HWND hBtnAddEnd        = nullptr;
     HWND hBtnYearToggle    = nullptr;
-    HWND hBtnYearValue     = nullptr;
     HWND hComboYearRange   = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
