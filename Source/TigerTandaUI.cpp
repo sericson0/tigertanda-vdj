@@ -45,13 +45,14 @@ static TigerTandaPlugin* getPlugin (HWND hwnd)
 // ─────────────────────────────────────────────────────────────────────────────
 
 static void drawOwnerButton (const DRAWITEMSTRUCT* di, const std::wstring& label,
-                             COLORREF bgColor, COLORREF fgColor, HFONT font)
+                             COLORREF bgColor, COLORREF fgColor, HFONT font,
+                             bool extraHover = false)
 {
     HDC hdc = di->hDC;
     RECT r = di->rcItem;
     bool pressed  = (di->itemState & ODS_SELECTED) != 0;
     bool disabled = (di->itemState & ODS_DISABLED) != 0;
-    bool hovered  = (di->itemState & ODS_HOTLIGHT)  != 0;
+    bool hovered  = (di->itemState & ODS_HOTLIGHT)  != 0 || extraHover;
 
     COLORREF bg = pressed  ? TCol::buttonHover
                 : disabled ? RGB (24, 28, 42)
@@ -85,12 +86,12 @@ static void drawOwnerButton (const DRAWITEMSTRUCT* di, const std::wstring& label
 // Flat text toggle — orange+bold when active, gray+normal otherwise
 static void drawTextToggle (const DRAWITEMSTRUCT* di, const std::wstring& label,
                             bool isActive, HFONT fontNormal, HFONT fontBold,
-                            COLORREF bgColor = TCol::panel)
+                            COLORREF bgColor = TCol::panel, bool extraHover = false)
 {
     HDC hdc = di->hDC;
     RECT r = di->rcItem;
     bool pressed = (di->itemState & ODS_SELECTED) != 0;
-    bool hovered = (di->itemState & ODS_HOTLIGHT)  != 0;
+    bool hovered = (di->itemState & ODS_HOTLIGHT)  != 0 || extraHover;
 
     COLORREF fillBg = bgColor;
     if (hovered && !isActive && !pressed)
@@ -502,6 +503,33 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         return hit;
     }
 
+    // ── Hover tracking via WM_SETCURSOR (wParam = HWND under cursor) ─────────
+    case WM_SETCURSOR:
+    {
+        if (p)
+        {
+            HWND tracked[] = {
+                p->hBtnClose, p->hBtnSearch, p->hBtnSearchVdj, p->hBtnPrelisten,
+                p->hBtnAddEnd, p->hBtnYearToggle, p->hChkArtist, p->hChkSinger,
+                p->hChkGrouping, p->hChkGenre, p->hChkOrchestra, p->hChkLabel,
+                p->hBtnTabTrack, p->hBtnTabMatches, p->hBtnTabBrowse, p->hBtnTabSettings,
+                p->hBtnHowTabs[0], p->hBtnHowTabs[1], p->hBtnHowTabs[2],
+                p->hBtnHowTabs[3], p->hBtnHowTabs[4]
+            };
+            HWND newHover = nullptr;
+            for (HWND h : tracked)
+                if (h && (HWND) wParam == h) { newHover = h; break; }
+            if (p->hoveredBtn != newHover)
+            {
+                HWND old = p->hoveredBtn;
+                p->hoveredBtn = newHover;
+                if (old)      InvalidateRect (old,      nullptr, FALSE);
+                if (newHover) InvalidateRect (newHover, nullptr, FALSE);
+            }
+        }
+        return FALSE;
+    }
+
     // ── Create controls ──────────────────────────────────────────────────────
     case WM_CREATE:
     {
@@ -560,8 +588,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 SendMessageW (p->hComboYearRange, CB_ADDSTRING, 0, (LPARAM) kYrLabels[i]);
             for (int i = 0; i < 6; ++i)
                 if (kYrVals[i] == p->yearRange) { SendMessageW (p->hComboYearRange, CB_SETCURSEL, i, 0); break; }
-            // Set closed-state height to match filter buttons
-            SendMessageW (p->hComboYearRange, CB_SETITEMHEIGHT, (WPARAM)-1, (LPARAM)(BTN_H - 4));
+            // Set closed-state height to match filter buttons (item height + ~4px border = btnH)
+            SendMessageW (p->hComboYearRange, CB_SETITEMHEIGHT, (WPARAM)-1, (LPARAM)(BTN_H - 8));
         }
 
         // "How it works" sub-tab buttons (Settings tab)
@@ -796,9 +824,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 drawBoldLine (2, L"\u2022  Year:",     L" Max difference in recording years");
             }
 
-            // Separator between descriptions section and filters
-            // sub-tabs at bY (18px) + gap (4px) + content (60px) + gap (4px) = bY+86
-            const int sepY = bY + 18 + 4 + 60 + 4;
+            // Separator: midpoint between content bottom (bY+22+3*15=bY+67) and filters top (bY+95)
+            const int sepY = bY + 81;
             HPEN sep = CreatePen (PS_SOLID, 1, TCol::cardBorder);
             HPEN old = (HPEN) SelectObject (hdc, sep);
             MoveToEx (hdc, lx, sepY, nullptr);
@@ -1206,22 +1233,22 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Tab buttons — use fontNormal for inactive state (increased from fontSmall)
             if (di->CtlID == IDC_BTN_TAB_TRACK)
             {
-                drawTextToggle (di, L"Track",   p->activeTab == 0, p->fontNormal, p->fontBold);
+                drawTextToggle (di, L"Track",   p->activeTab == 0, p->fontNormal, p->fontBold, TCol::panel, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_TAB_MATCHES)
             {
-                drawTextToggle (di, L"Matches", p->activeTab == 1, p->fontNormal, p->fontBold);
+                drawTextToggle (di, L"Matches", p->activeTab == 1, p->fontNormal, p->fontBold, TCol::panel, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_TAB_BROWSE)
             {
-                drawTextToggle (di, L"Browse",  p->activeTab == 2, p->fontNormal, p->fontBold);
+                drawTextToggle (di, L"Browse",  p->activeTab == 2, p->fontNormal, p->fontBold, TCol::panel, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
             if (di->CtlID == IDC_BTN_TAB_SETTINGS)
             {
-                drawTextToggle (di, L"\u26ED",  p->activeTab == 3, p->fontNormal, p->fontBold);
+                drawTextToggle (di, L"\u26ED",  p->activeTab == 3, p->fontNormal, p->fontBold, TCol::panel, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
 
@@ -1271,7 +1298,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 COLORREF fg  = p->prelistenActive ? TCol::textBright : TCol::accentBrt;
                 wchar_t txt[4] = {};
                 GetWindowTextW (di->hwndItem, txt, 4);
-                drawOwnerButton (di, txt, bg, fg, p->fontNormal);
+                drawOwnerButton (di, txt, bg, fg, p->fontNormal, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
 
@@ -1295,7 +1322,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 // Darker orange when active (was TCol::accent)
                 COLORREF fbg = isOn ? RGB (160, 75, 20) : TCol::buttonBg;
                 COLORREF ffg = isOn ? TCol::textBright   : TCol::textDim;
-                drawOwnerButton (di, ftxt, fbg, ffg, p->fontSmall);
+                drawOwnerButton (di, ftxt, fbg, ffg, p->fontSmall, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
 
@@ -1305,7 +1332,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 int idx = di->CtlID - IDC_BTN_HOW_TAB_0;
                 static const wchar_t* kNames[] = { L"Overview", L"Track", L"Matches", L"Browser", L"Filters" };
                 drawTextToggle (di, kNames[idx], p->activeHowTab == idx,
-                                p->fontSmall, p->fontSmall, TCol::bg);
+                                p->fontSmall, p->fontSmall, TCol::bg, p->hoveredBtn == di->hwndItem);
                 return TRUE;
             }
 
@@ -1314,7 +1341,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             GetWindowTextW (di->hwndItem, text, 128);
             std::wstring label (text);
 
-            bool btnHovered = (di->itemState & ODS_HOTLIGHT) != 0;
+            bool btnHovered = (di->itemState & ODS_HOTLIGHT) != 0 || p->hoveredBtn == di->hwndItem;
             COLORREF bg = TCol::buttonBg, fg = TCol::textNormal;
             if      (di->CtlID == IDC_BTN_SEARCH_VDJ)   { bg = RGB (35, 50, 70);  fg = TCol::textBright; }
             else if (di->CtlID == IDC_BTN_CLOSE)
@@ -1334,7 +1361,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 fg = p->filterUseYearRange ? TCol::textBright  : TCol::textDim;
             }
 
-            drawOwnerButton (di, label, bg, fg, p->fontNormal);
+            // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
+            bool passHover = (di->CtlID != IDC_BTN_CLOSE) && btnHovered;
+            drawOwnerButton (di, label, bg, fg, p->fontNormal, passHover);
             return TRUE;
         }
 

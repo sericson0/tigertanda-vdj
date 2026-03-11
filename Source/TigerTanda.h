@@ -236,6 +236,7 @@ public:
     HWND hComboYearRange   = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
+    HWND hoveredBtn        = nullptr;   // currently hovered owner-draw button (for hover highlight)
 
     // ── GDI resources ────────────────────────────────────────────────────────
     HFONT fontNormal    = nullptr;  // FONT_SIZE_NORMAL pt regular
