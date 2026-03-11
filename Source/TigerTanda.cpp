@@ -110,7 +110,7 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
     if (GetInfo ("get hwnd", &hwndVal) == S_OK && hwndVal != 0)
         parentHwnd = (HWND) (intptr_t) hwndVal;
 
-    const int initW = (viewMode == 0) ? DLG_W_WIDE : DLG_W_COMPACT;
+    const int initW = DLG_W;
 
     int posX, posY;
     if (parentHwnd)
@@ -259,11 +259,6 @@ void TigerTandaPlugin::loadSettings()
         {
             if (key == "metadataFolder")
                 metadataFolder = toWide (val);
-            else if (key == "sourceMode")
-            {
-                sourceMode = std::stoi (val);
-                if (sourceMode < 0 || sourceMode > 4) sourceMode = 3; // default Active
-            }
             else if (key == "sameArtist")
                 filterSameArtist = (val != "0");
             else if (key == "sameSinger")
@@ -282,15 +277,10 @@ void TigerTandaPlugin::loadSettings()
                 if (yearRange < 0) yearRange = 0;
                 if (yearRange > 20) yearRange = 20;
             }
-            else if (key == "viewMode")
-            {
-                viewMode = std::stoi (val);
-                if (viewMode < 0 || viewMode > 1) viewMode = 0;
-            }
             else if (key == "activeTab")
             {
                 activeTab = std::stoi (val);
-                if (activeTab < 0 || activeTab > 2) activeTab = 0;
+                if (activeTab < 0 || activeTab > 3) activeTab = 0;
             }
         }
         catch (...) {}
@@ -305,7 +295,6 @@ void TigerTandaPlugin::saveSettings()
     if (!out.is_open()) return;
 
     out << "metadataFolder=" << toUtf8 (metadataFolder) << "\n";
-    out << "sourceMode=" << sourceMode << "\n";
     out << "sameArtist=" << (filterSameArtist ? 1 : 0) << "\n";
     out << "sameSinger=" << (filterSameSinger ? 1 : 0) << "\n";
     out << "sameGrouping=" << (filterSameGrouping ? 1 : 0) << "\n";
@@ -313,7 +302,6 @@ void TigerTandaPlugin::saveSettings()
     out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
     out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
     out << "yearRange=" << yearRange << "\n";
-    out << "viewMode=" << viewMode << "\n";
     out << "activeTab=" << activeTab << "\n";
 }
 

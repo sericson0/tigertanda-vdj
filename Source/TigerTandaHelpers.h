@@ -65,3 +65,9 @@ std::wstring joinNonEmptyParts (const std::vector<std::wstring>& parts, const st
 
 // System helpers
 bool isVdjHostForeground();
+
+// Prelisten waveform (fake bins from file-path hash, matches TigerTag)
+void rebuildPrelistenWaveBins (std::vector<int>& bins, const std::wstring& keyPath);
+
+// Replace Spanish/Latin diacritics with ASCII equivalents for VDJ search
+std::wstring normalizeForSearch (const std::wstring& s);
