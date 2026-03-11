@@ -51,10 +51,18 @@ static void drawOwnerButton (const DRAWITEMSTRUCT* di, const std::wstring& label
     RECT r = di->rcItem;
     bool pressed  = (di->itemState & ODS_SELECTED) != 0;
     bool disabled = (di->itemState & ODS_DISABLED) != 0;
+    bool hovered  = (di->itemState & ODS_HOTLIGHT)  != 0;
 
     COLORREF bg = pressed  ? TCol::buttonHover
                 : disabled ? RGB (24, 28, 42)
                            : bgColor;
+    if (hovered && !pressed && !disabled)
+    {
+        BYTE hr = (BYTE)(GetRValue (bg) + 12 > 255 ? 255 : GetRValue (bg) + 12);
+        BYTE hg = (BYTE)(GetGValue (bg) + 12 > 255 ? 255 : GetGValue (bg) + 12);
+        BYTE hb = (BYTE)(GetBValue (bg) + 12 > 255 ? 255 : GetBValue (bg) + 12);
+        bg = RGB (hr, hg, hb);
+    }
 
     HRGN rgn = CreateRoundRectRgn (r.left, r.top, r.right, r.bottom, 6, 6);
     SelectClipRgn (hdc, rgn);
@@ -82,10 +90,19 @@ static void drawTextToggle (const DRAWITEMSTRUCT* di, const std::wstring& label,
     HDC hdc = di->hDC;
     RECT r = di->rcItem;
     bool pressed = (di->itemState & ODS_SELECTED) != 0;
+    bool hovered = (di->itemState & ODS_HOTLIGHT)  != 0;
 
-    fillRect (hdc, r, bgColor);
+    COLORREF fillBg = bgColor;
+    if (hovered && !isActive && !pressed)
+    {
+        BYTE hr = (BYTE)(GetRValue (bgColor) + 8 > 255 ? 255 : GetRValue (bgColor) + 8);
+        BYTE hg = (BYTE)(GetGValue (bgColor) + 8 > 255 ? 255 : GetGValue (bgColor) + 8);
+        BYTE hb = (BYTE)(GetBValue (bgColor) + 8 > 255 ? 255 : GetBValue (bgColor) + 8);
+        fillBg = RGB (hr, hg, hb);
+    }
+    fillRect (hdc, r, fillBg);
 
-    COLORREF fg = (isActive || pressed) ? TCol::accentBrt : TCol::textDim;
+    COLORREF fg = (isActive || pressed) ? TCol::accentBrt : hovered ? TCol::textNormal : TCol::textDim;
     HFONT font  = (isActive || pressed) ? fontBold : fontNormal;
     drawText (hdc, r, label, fg, font, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
@@ -141,8 +158,10 @@ static std::wstring formatDateYMD (const std::wstring& raw)
 // Row 2: Date (YYYY-mm-dd) · Genre · Label
 // Row 3: Orchestra
 // Row 4: Group: <grouping>
+// fontRow1 = fontSmallBold (11pt bold), fontRows234 = fontNormal (13pt)
+// Both reduced 2pt from previous fontBold(13) / fontDetail(15) to fix descender clipping
 static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
-                                 HFONT fontDetail, HFONT fontBold, HFONT fontSmall)
+                                 HFONT fontRow1, HFONT fontRows234, HFONT fontSmall)
 {
     fillRect (hdc, r, TCol::card);
 
@@ -155,15 +174,15 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
 
     int px = r.left + 6;
     int py = r.top + 4;
-    const int lineH = 16;
+    const int lineH = 17;  // increased from 16 — gives descenders room at 13pt
 
     // Row 1: Bandleader · Singer
     std::wstring line1 = rec.bandleader;
     if (!rec.singer.empty()) { if (!line1.empty()) line1 += L"  \u00B7  "; line1 += rec.singer; }
     RECT r1 { px, py, r.right - 6, py + lineH };
-    drawText (hdc, r1, line1, TCol::textBright, fontBold,
+    drawText (hdc, r1, line1, TCol::textBright, fontRow1,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-    py += lineH + 2;
+    py += lineH + 1;
 
     // Row 2: Date (YYYY-mm-dd) · Genre · Label
     std::wstring dateStr = formatDateYMD (rec.date);
@@ -172,25 +191,25 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
     if (!rec.genre.empty())  { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
     if (!rec.label.empty())  { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.label; }
     RECT r2 { px, py, r.right - 6, py + lineH };
-    drawText (hdc, r2, line2, TCol::textDim, fontDetail,
+    drawText (hdc, r2, line2, TCol::textDim, fontRows234,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-    py += lineH + 2;
+    py += lineH + 1;
 
     // Row 3: Orchestra
     if (!rec.orchestra.empty())
     {
         RECT r3 { px, py, r.right - 6, py + lineH };
-        drawText (hdc, r3, rec.orchestra, TCol::textDim, fontDetail,
+        drawText (hdc, r3, rec.orchestra, TCol::textDim, fontRows234,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
-    py += lineH + 2;
+    py += lineH + 1;
 
     // Row 4: Group: <grouping>
     if (!rec.grouping.empty())
     {
         std::wstring line4 = L"Group: " + rec.grouping;
         RECT r4 { px, py, r.right - 6, py + lineH };
-        drawText (hdc, r4, line4, TCol::textDim, fontDetail,
+        drawText (hdc, r4, line4, TCol::textDim, fontRows234,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 }
@@ -365,7 +384,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int gap  = 4;
         const int colW = (lw - gap * 2) / 3;
 
-        int sy = bodyY + PAD;  // no header offset — descriptions section is first
+        int sy = bodyY + PAD - 5;  // how-tabs 5pt closer to top bar
 
         // "How it works" sub-tabs row at top
         const int howTabW = lw / 5;
@@ -374,7 +393,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         sy += 18 + 4;  // 18px tabs + 4px gap
 
         // Content area (drawn in WM_PAINT): 4 rows × 15px = 60px, then separator
-        sy += 60 + 8;  // skip painted content + separator gap
+        sy += 60 + 13;  // skip painted content + 8 gap + 5 extra to push filters down
 
         // Filter Row 1: ARTIST, SINGER, GENRE
         MoveWindow (p->hChkArtist,    lx,                    sy, colW, btnH, FALSE);
@@ -386,7 +405,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hChkGrouping,  lx,                    sy, colW, btnH, FALSE);
         MoveWindow (p->hChkLabel,     lx + colW + gap,       sy, colW, btnH, FALSE);
         MoveWindow (p->hChkOrchestra, lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
-        sy += btnH + 8;
+        sy += btnH + 4;
 
         // Year row (centered): [YEAR toggle][year range combobox]
         const int ytW = 60;
@@ -395,7 +414,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int yearX = lx + (lw - yearRowTotalW) / 2;
         MoveWindow (p->hBtnYearToggle,  yearX,          sy, ytW, btnH,       FALSE);
         // Combobox height includes dropdown — add 120 for the drop-down list area
-        MoveWindow (p->hComboYearRange, yearX + ytW + 6, sy, ycW, btnH + 120, FALSE);
+        MoveWindow (p->hComboYearRange, yearX + ytW + 6, sy, ycW, btnH + 115, FALSE);
 
         // Hide legacy year controls
         showCtrl (p->hEditYearRange, false);
@@ -578,21 +597,45 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hBtnPrelisten = mkBtn (IDC_BTN_PRELISTEN, L"\u25B6");  // ▶
         p->hBtnAddEnd    = mkBtn (IDC_BTN_ADD_END,   L"ADD");
 
-        // Tooltip for ADD button
+        // Tooltips for all buttons
         p->hTooltip = CreateWindowExW (0, TOOLTIPS_CLASS, nullptr,
                                        WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
                                        CW_USEDEFAULT, CW_USEDEFAULT,
                                        CW_USEDEFAULT, CW_USEDEFAULT,
                                        hwnd, nullptr, nullptr, nullptr);
-        if (p->hTooltip && p->hBtnAddEnd)
+        if (p->hTooltip)
         {
-            TOOLINFOW ti {};
-            ti.cbSize   = sizeof (ti);
-            ti.uFlags   = TTF_IDISHWND | TTF_SUBCLASS;
-            ti.hwnd     = hwnd;
-            ti.uId      = (UINT_PTR) p->hBtnAddEnd;
-            ti.lpszText = (LPWSTR) L"Add song to end of playlist";
-            SendMessageW (p->hTooltip, TTM_ADDTOOLW, 0, (LPARAM) &ti);
+            SendMessageW (p->hTooltip, TTM_SETMAXTIPWIDTH, 0, 220);
+
+            auto addTip = [&](HWND h, const wchar_t* tip)
+            {
+                if (!h) return;
+                TOOLINFOW ti {};
+                ti.cbSize   = sizeof (ti);
+                ti.uFlags   = TTF_IDISHWND | TTF_SUBCLASS;
+                ti.hwnd     = hwnd;
+                ti.uId      = (UINT_PTR) h;
+                ti.lpszText = (LPWSTR) tip;
+                SendMessageW (p->hTooltip, TTM_ADDTOOLW, 0, (LPARAM) &ti);
+            };
+
+            addTip (p->hBtnClose,        L"Close Tiger Tanda");
+            addTip (p->hBtnTabTrack,     L"Track — identify the browsed song");
+            addTip (p->hBtnTabMatches,   L"Matches — find songs for your tanda");
+            addTip (p->hBtnTabBrowse,    L"Browse — search and queue songs");
+            addTip (p->hBtnTabSettings,  L"Settings — filters and help");
+            addTip (p->hBtnSearch,       L"Search database for entered title/artist");
+            addTip (p->hBtnSearchVdj,    L"Search VDJ browser for selected song");
+            addTip (p->hBtnPrelisten,    L"Preview selected song");
+            addTip (p->hBtnAddEnd,       L"Add selected song to end of playlist");
+            addTip (p->hChkArtist,       L"Filter: same bandleader / artist");
+            addTip (p->hChkSinger,       L"Filter: same singer");
+            addTip (p->hChkGrouping,     L"Filter: same recording period / group");
+            addTip (p->hChkGenre,        L"Filter: same genre");
+            addTip (p->hChkOrchestra,    L"Filter: same orchestra");
+            addTip (p->hChkLabel,        L"Filter: same record label");
+            addTip (p->hBtnYearToggle,   L"Toggle year-range filter on/off");
+            addTip (p->hComboYearRange,  L"Maximum year difference for matches");
         }
 
         // Find Track button (Matches tab, brand row)
@@ -657,7 +700,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             if (p->selectedResultIdx >= 0 && p->selectedResultIdx < (int) p->results.size())
                 drawResultDetailBox (hdc, detR, p->results[p->selectedResultIdx],
-                                     p->fontDetail, p->fontBold, p->fontSmall);
+                                     p->fontSmallBold, p->fontNormal, p->fontSmall);
             else
             {
                 fillRect (hdc, detR, TCol::card);
@@ -687,7 +730,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         {
             const int lx  = PAD;
             const int lw  = DLG_W - PAD * 2;
-            const int bY  = TOP_H + PAD;
+            const int bY  = TOP_H + PAD - 5;  // matches applyLayout how-tabs -5 offset
 
             // Content area: below how-tab buttons (tabs at bY, h=18; content at bY+22)
             const int contentY = bY + 18 + 4;
@@ -696,26 +739,26 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             {
                 static const wchar_t* kContent[4][5] = {
                     // 0 Overview
-                    { L"\u2022  Select song in VDJ. Use Track Tab to match to database",
-                      L"\u2022  Matches Tab presents similar songs for a tanda",
-                      L"\u2022  FIND TRACK searches for selected song in VDJ",
-                      L"\u2022  Use Settings to specify match criteria",
+                    { L"\u2022  Select track in VDJ \u2014 Track tab matches to database",
+                      L"\u2022  Matches tab finds similar songs for your tanda",
+                      L"\u2022  Click FIND to search for the selected track in VDJ",
+                      L"\u2022  Use Settings to set match criteria",
                       nullptr },
                     // 1 Track
-                    { L"\u2022  Browse song in VDJ to auto-detect",
-                      L"\u2022  Choose candidate that matches",
-                      L"\u2022  Use search bar to update if correct match not found",
+                    { L"\u2022  Select track in VDJ to auto-detect",
+                      L"\u2022  Choose the candidate that matches",
+                      L"\u2022  Use the search bar if the correct match isn't shown",
                       nullptr, nullptr },
                     // 2 Matches
-                    { L"\u2022  Displays similar tracks based on selected filters",
-                      L"\u2022  Select song to see additional details",
-                      L"\u2022  FIND TRACK searches for song in VDJ browser",
+                    { L"\u2022  Shows similar tracks based on your filters",
+                      L"\u2022  Select a song to see details below",
+                      L"\u2022  Click FIND to search for the selected track",
                       nullptr, nullptr },
                     // 3 Browser
-                    { L"\u2022  Displays browser results ranked by relevance",
-                      L"\u2022  Click to focus VDJ on file",
-                      L"\u2022  ADD adds selected file to bottom of playlist",
-                      L"\u2022  Go back to Matches tab for more tracks",
+                    { L"\u2022  Displays ranked results from VDJ browser",
+                      L"\u2022  Click a row to focus VDJ on that file",
+                      L"\u2022  ADD adds the selected file to end of playlist",
+                      L"\u2022  Go back to Matches to find more tracks",
                       nullptr },
                 };
                 for (int i = 0; i < 5; ++i)
@@ -753,10 +796,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     }
                 };
 
-                drawBoldLine (0, nullptr,       L"\u2022  Determine match criteria", false);
-                drawBoldLine (1, L"\u2022  Artist",    L" filters by Bandleader,  Orchestra by orchestra");
-                drawBoldLine (2, L"\u2022  Group",     L" filters by Similar period,  Label by Record label");
-                drawBoldLine (3, L"\u2022  Year",      L" sets max recording year difference (0=same year)");
+                drawBoldLine (0, L"\u2022  Artist:",   L" Band Leader");
+                drawBoldLine (1, L"\u2022  Group:",    L" Similar period");
+                drawBoldLine (2, L"\u2022  Label:",    L" Record label");
+                drawBoldLine (3, L"\u2022  Year:",     L" Max difference in recording years");
             }
 
             // Separator between descriptions section and filters
@@ -770,7 +813,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             DeleteObject (sep);
 
             // ── Logo (fills bottom of settings — no brand text on this tab) ──
-            const int logoH    = 100;  // enlarged to fill space freed by removed headers
+            const int logoH    = 110;
             const int logoMaxW = lw;
             const int logoTop  = DLG_H - PAD - logoH;
             RECT logoRect { lx, logoTop, lx + logoMaxW, logoTop + logoH };
@@ -1285,8 +1328,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             else if (di->CtlID == IDC_BTN_ADD_END)       { bg = RGB (28, 55, 28);  fg = TCol::textBright; }
             else if (di->CtlID == IDC_BTN_YEAR_TOGGLE)
             {
-                bg = p->filterUseYearRange ? TCol::accent    : TCol::buttonBg;
-                fg = p->filterUseYearRange ? TCol::textBright : TCol::textDim;
+                bg = p->filterUseYearRange ? RGB (160, 75, 20) : TCol::buttonBg;  // matches filter buttons
+                fg = p->filterUseYearRange ? TCol::textBright   : TCol::textDim;
             }
             else if (di->CtlID == IDC_BTN_YEAR_VALUE)
             {

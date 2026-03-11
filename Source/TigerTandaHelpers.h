@@ -21,7 +21,7 @@ namespace TCol
     inline const COLORREF card        = RGB(26,  30,  44);
     inline const COLORREF cardBorder  = RGB(42,  46,  62);
     inline const COLORREF textNormal  = RGB(176, 180, 192);
-    inline const COLORREF textBright  = RGB(240, 240, 240);
+    inline const COLORREF textBright  = RGB(220, 224, 235);  // softened from 240,240,240
     inline const COLORREF textDim     = RGB(106, 110, 128);
     inline const COLORREF accent      = RGB(217, 108, 48);
     inline const COLORREF accentBrt   = RGB(243, 161, 15);
