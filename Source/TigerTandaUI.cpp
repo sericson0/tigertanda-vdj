@@ -139,7 +139,7 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec, HFONT fon
 
     // Row 2: Date · Genre · Label
     std::wstring line2;
-    if (!rec.year.empty())  line2 += rec.year;
+    if (!rec.date.empty())  line2 += rec.date;
     if (!rec.genre.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
     if (!rec.label.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.label; }
     RECT r2 { px, py, r.right - 6, py + lineH2 };
@@ -252,15 +252,6 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     {
         int ly = bodyY + PAD;
 
-        // Source row: [Browser] [Deck] [DeckSel (cycle)]
-        const int bW = lw * 45 / 100;
-        const int dW = lw * 27 / 100;
-        const int cW = lw - bW - dW;
-        MoveWindow (p->hBtnSrcBrowser, lx,           ly, bW, BTN_H, FALSE);
-        MoveWindow (p->hBtnSrcDeck,    lx + bW,      ly, dW, BTN_H, FALSE);
-        MoveWindow (p->hBtnDeckSel,    lx + bW + dW, ly, cW, BTN_H, FALSE);
-        ly += BTN_H + 8;
-
         // Search row: [Title][Artist][Q]
         const int sbW = BTN_H;
         const int gap = 4;
@@ -276,9 +267,6 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int brandH = 20;
         MoveWindow (p->hCandList, lx, ly, lw, DLG_H - ly - PAD - brandH - 2, FALSE);
     }
-    showCtrl (p->hBtnSrcBrowser, showT);
-    showCtrl (p->hBtnSrcDeck,    showT);
-    showCtrl (p->hBtnDeckSel,    showT);
     showCtrl (p->hEditTitle,     showT);
     showCtrl (p->hEditArtist,    showT);
     showCtrl (p->hBtnSearch,     showT);
@@ -352,35 +340,6 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     showCtrl (p->hSpinYear,      showS);
 
     InvalidateRect (hwnd, nullptr, TRUE);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Source mode helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void updateSourceToggle (TigerTandaPlugin* p, int newMode, HWND /*hwnd*/)
-{
-    p->sourceMode = newMode;
-    if (newMode != 0) p->lastDeckMode = newMode;
-    p->lastSeenTitle.clear();
-    p->lastSeenArtist.clear();
-    if (p->hBtnSrcBrowser) InvalidateRect (p->hBtnSrcBrowser, nullptr, FALSE);
-    if (p->hBtnSrcDeck)    InvalidateRect (p->hBtnSrcDeck,    nullptr, FALSE);
-    if (p->hBtnDeckSel)    InvalidateRect (p->hBtnDeckSel,    nullptr, FALSE);
-    p->saveSettings();
-}
-
-// Label for deck sub-mode
-static const wchar_t* deckModeLabel (int mode)
-{
-    switch (mode)
-    {
-        case 1:  return L"Left";
-        case 2:  return L"Right";
-        case 3:  return L"Active";
-        case 4:  return L"Inact.";
-        default: return L"Active";
-    }
 }
 
 // Invalidate all 4 tab buttons
@@ -468,11 +427,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hBtnTabMatches   = mkBtn (IDC_BTN_TAB_MATCHES,  L"Matches");
         p->hBtnTabBrowse    = mkBtn (IDC_BTN_TAB_BROWSE,   L"Browse");
         p->hBtnTabSettings  = mkBtn (IDC_BTN_TAB_SETTINGS, L"\u26ED");  // ⛭
-
-        // Source toggle: [Browser] [Deck] [DeckSel▾]
-        p->hBtnSrcBrowser = mkBtn (IDC_BTN_SRC_BROWSER, L"Browser");
-        p->hBtnSrcDeck    = mkBtn (IDC_BTN_SRC_DECK,    L"Deck");
-        p->hBtnDeckSel    = mkBtn (IDC_BTN_DECK_SEL,    L"");
 
         // Search row
         p->hEditTitle = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
@@ -583,7 +537,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             const int lx2 = PAD;
             const int brandH = 20;
             RECT brandR { lx2, DLG_H - PAD - brandH, lx2 + 140, DLG_H - PAD };
-            drawText (hdc, brandR, L"Tiger Tanda", TCol::textDim, p->fontNormal,
+            drawText (hdc, brandR, L"Tiger Tanda", TCol::accent, p->fontBold,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
 
@@ -682,26 +636,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             ShowWindow (hwnd, SW_HIDE);
         }
 
-        // ── Poll song from browser or deck ────────────────────────────────────
-        std::wstring newTitle, newArtist;
-        if (p->sourceMode == 0)
-        {
-            newTitle  = p->vdjGetString ("get_browsed_song 'title'");
-            newArtist = p->vdjGetString ("get_browsed_song 'artist'");
-        }
-        else
-        {
-            int deckIdx = 0;
-            if      (p->sourceMode == 1) deckIdx = 0;
-            else if (p->sourceMode == 2) deckIdx = 1;
-            else if (p->sourceMode == 3) deckIdx = (int) p->vdjGetValue ("get_active_deck");
-            else                          deckIdx = 1 - (int) p->vdjGetValue ("get_active_deck");
-            char titleQ[32], artistQ[32];
-            snprintf (titleQ,  sizeof (titleQ),  "deck%d_title",  deckIdx);
-            snprintf (artistQ, sizeof (artistQ), "deck%d_artist", deckIdx);
-            newTitle  = p->vdjGetString (titleQ);
-            newArtist = p->vdjGetString (artistQ);
-        }
+        // ── Poll song from browser ────────────────────────────────────────────
+        std::wstring newTitle  = p->vdjGetString ("get_browsed_song 'title'");
+        std::wstring newArtist = p->vdjGetString ("get_browsed_song 'artist'");
 
         if (!newTitle.empty()
             && (newTitle != p->lastSeenTitle || newArtist != p->lastSeenArtist))
@@ -711,15 +648,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (p->hEditTitle)  SetWindowTextW (p->hEditTitle,  newTitle.c_str());
             if (p->hEditArtist) SetWindowTextW (p->hEditArtist, newArtist.c_str());
             p->runIdentification (newTitle, newArtist);
-
-            // Auto-switch to Track tab when a new song loads on the deck
-            if (p->sourceMode != 0 && p->activeTab != 0)
-            {
-                p->activeTab = 0;
-                applyLayout (p, hwnd);
-                repaintTabs (p);
-                p->saveSettings();
-            }
         }
 
         // ── Poll prelisten filepath for waveform ──────────────────────────────
@@ -802,31 +730,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case IDC_BTN_TAB_SETTINGS:
             p->activeTab = 3; p->saveSettings(); applyLayout (p, hwnd); repaintTabs (p); break;
 
-        // Source: Browser
-        case IDC_BTN_SRC_BROWSER:
-            updateSourceToggle (p, 0, hwnd);
-            break;
-
-        // Source: Deck (use lastDeckMode)
-        case IDC_BTN_SRC_DECK:
-            updateSourceToggle (p, p->lastDeckMode, hwnd);
-            break;
-
-        // Deck sub-mode cycle button (Active→Left→Right→Inactive→Active)
-        case IDC_BTN_DECK_SEL:
-        {
-            int next = p->lastDeckMode;
-            switch (next)
-            {
-                case 3:  next = 1; break;   // Active → Left
-                case 1:  next = 2; break;   // Left   → Right
-                case 2:  next = 4; break;   // Right  → Inactive
-                default: next = 3; break;   // Inactive → Active
-            }
-            updateSourceToggle (p, next, hwnd);
-            break;
-        }
-
         // Manual search
         case IDC_BTN_SEARCH:
         {
@@ -903,6 +806,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (!rec.bandleader.empty()) query += L" " + normalizeForSearch (rec.bandleader);
                 std::string cmd = "search \"" + toUtf8 (query) + "\"";
                 p->vdjSend (cmd);
+                p->vdjSend ("browser_window 'songs'");
                 // Switch to Browse tab so user sees results
                 p->activeTab = 2;
                 p->saveSettings();
@@ -974,38 +878,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (di->CtlType == ODT_BUTTON)
         {
-            // Source toggle: Browser / Deck
-            if (di->CtlID == IDC_BTN_SRC_BROWSER)
-            {
-                drawTextToggle (di, L"Browser", p->sourceMode == 0, p->fontSmall, p->fontBold);
-                return TRUE;
-            }
-            if (di->CtlID == IDC_BTN_SRC_DECK)
-            {
-                bool deckActive = (p->sourceMode != 0);
-                drawTextToggle (di, L"Deck", deckActive, p->fontSmall, p->fontBold);
-                return TRUE;
-            }
-            // Deck sub-mode selector
-            if (di->CtlID == IDC_BTN_DECK_SEL)
-            {
-                bool pressed = (di->itemState & ODS_SELECTED) != 0;
-                RECT r = di->rcItem;
-                fillRect (di->hDC, r, pressed ? TCol::buttonHover : TCol::buttonBg);
-                HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-                HPEN oldPen = (HPEN) SelectObject (di->hDC, pen);
-                HBRUSH oldBr = (HBRUSH) SelectObject (di->hDC, GetStockObject (NULL_BRUSH));
-                RoundRect (di->hDC, r.left, r.top, r.right, r.bottom, 4, 4);
-                SelectObject (di->hDC, oldPen); SelectObject (di->hDC, oldBr);
-                DeleteObject (pen);
-
-                // Label shows current deck mode; cycle on click
-                std::wstring lbl = deckModeLabel (p->lastDeckMode);
-                COLORREF fg = (p->sourceMode != 0) ? TCol::textBright : TCol::textDim;
-                drawText (di->hDC, r, lbl, fg, p->fontSmall, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                return TRUE;
-            }
-
             // Tab buttons
             if (di->CtlID == IDC_BTN_TAB_TRACK)
             {
@@ -1181,14 +1053,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
             int tx = r.left + 5;
-            RECT titleR { tx, r.top, r.right - 50, r.bottom };
+            RECT titleR { tx, r.top, r.right - 82, r.bottom };
             drawText (hdc, titleR, rec.title, TCol::textBright, p->fontSmall,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-            if (!rec.year.empty())
+            if (!rec.date.empty())
             {
-                RECT yearR { r.right - 48, r.top, r.right - 4, r.bottom };
-                drawText (hdc, yearR, rec.year, TCol::textDim, p->fontSmall,
+                RECT dateR { r.right - 80, r.top, r.right - 4, r.bottom };
+                drawText (hdc, dateR, rec.date, TCol::textDim, p->fontSmall,
                           DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
             }
 

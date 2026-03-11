@@ -18,11 +18,6 @@
 
 enum CtrlId
 {
-    // Source selection
-    IDC_BTN_SRC_BROWSER    = 2002,
-    IDC_BTN_SRC_DECK       = 2003,
-    IDC_BTN_DECK_SEL       = 2004,  // Deck sub-mode dropdown button (Active/Left/Right/Inactive)
-
     // Track tab
     IDC_EDIT_TITLE         = 2101,
     IDC_EDIT_ARTIST        = 2102,
@@ -156,10 +151,6 @@ public:
     bool filterSameLabel     = false;
     int  yearRange           = 5;
 
-    // ── Source mode ─────────────────────────────────────────────────────────
-    int  sourceMode    = 3;   // 0=Browser, 1=Left, 2=Right, 3=Active, 4=Inactive
-    int  lastDeckMode  = 3;   // last chosen deck sub-mode (restored when switching back to deck)
-
     // ── Tab ─────────────────────────────────────────────────────────────────
     int  activeTab = 0;       // 0=Track, 1=Matches, 2=Browse, 3=Settings
 
@@ -185,9 +176,6 @@ public:
 
     // ── Window handles ───────────────────────────────────────────────────────
     HWND hDlg              = nullptr;
-    HWND hBtnSrcBrowser    = nullptr;
-    HWND hBtnSrcDeck       = nullptr;
-    HWND hBtnDeckSel       = nullptr;
     HWND hEditTitle        = nullptr;
     HWND hEditArtist       = nullptr;
     HWND hBtnSearch        = nullptr;

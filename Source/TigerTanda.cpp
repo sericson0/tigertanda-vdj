@@ -259,11 +259,6 @@ void TigerTandaPlugin::loadSettings()
         {
             if (key == "metadataFolder")
                 metadataFolder = toWide (val);
-            else if (key == "sourceMode")
-            {
-                sourceMode = std::stoi (val);
-                if (sourceMode < 0 || sourceMode > 4) sourceMode = 3; // default Active
-            }
             else if (key == "sameArtist")
                 filterSameArtist = (val != "0");
             else if (key == "sameSinger")
@@ -287,11 +282,6 @@ void TigerTandaPlugin::loadSettings()
                 activeTab = std::stoi (val);
                 if (activeTab < 0 || activeTab > 3) activeTab = 0;
             }
-            else if (key == "lastDeckMode")
-            {
-                lastDeckMode = std::stoi (val);
-                if (lastDeckMode < 1 || lastDeckMode > 4) lastDeckMode = 3;
-            }
         }
         catch (...) {}
     }
@@ -305,7 +295,6 @@ void TigerTandaPlugin::saveSettings()
     if (!out.is_open()) return;
 
     out << "metadataFolder=" << toUtf8 (metadataFolder) << "\n";
-    out << "sourceMode=" << sourceMode << "\n";
     out << "sameArtist=" << (filterSameArtist ? 1 : 0) << "\n";
     out << "sameSinger=" << (filterSameSinger ? 1 : 0) << "\n";
     out << "sameGrouping=" << (filterSameGrouping ? 1 : 0) << "\n";
@@ -314,7 +303,6 @@ void TigerTandaPlugin::saveSettings()
     out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
     out << "yearRange=" << yearRange << "\n";
     out << "activeTab=" << activeTab << "\n";
-    out << "lastDeckMode=" << lastDeckMode << "\n";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
