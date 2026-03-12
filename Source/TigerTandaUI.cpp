@@ -408,10 +408,11 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hChkOrchestra, lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
         sy += btnH + 4;
 
-        // Filter Row 3: TRACK, YEAR, ±N YRS
-        MoveWindow (p->hChkTrack,       lx,                    sy, colW, btnH, FALSE);
-        MoveWindow (p->hBtnYearToggle,  lx + colW + gap,       sy, colW, btnH, FALSE);
-        MoveWindow (p->hBtnYearRange,   lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
+        // Filter Row 3: [YEAR][±N] (half-col each, left) ... [TRACK] (right)
+        const int halfCol = (colW - gap) / 2;
+        MoveWindow (p->hBtnYearToggle,  lx,                    sy, halfCol, btnH, FALSE);
+        MoveWindow (p->hBtnYearRange,   lx + halfCol + gap,    sy, halfCol, btnH, FALSE);
+        MoveWindow (p->hChkTrack,       lx + colW * 2 + gap*2, sy, lw - colW*2 - gap*2, btnH, FALSE);
 
     }
     showCtrl (p->hChkArtist,      showS);
@@ -572,7 +573,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hBtnYearToggle = mkBtn (IDC_BTN_YEAR_TOGGLE, L"YEAR");
         // Year range button (cycles through values on click)
         {
-            static const wchar_t* kYrLabels[] = { L"\u00B10 YRS", L"\u00B11 YR", L"\u00B12 YRS", L"\u00B13 YRS", L"\u00B15 YRS", L"\u00B110 YRS" };
+            static const wchar_t* kYrLabels[] = { L"\u00B10", L"\u00B11", L"\u00B12", L"\u00B13", L"\u00B15", L"\u00B110" };
             static const int      kYrVals[]   = { 0, 1, 2, 3, 5, 10 };
             int initIdx = 0;
             for (int i = 0; i < 6; ++i)
@@ -875,6 +876,26 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             return 0;
         }
 
+        // ── Waveform position update (50ms) ──────────────────────────────────
+        if (wParam == TIMER_WAVE_UPDATE)
+        {
+            if (p->prelistenActive && IsWindowVisible (hwnd))
+            {
+                double pos = p->vdjGetValue ("prelisten_pos");
+                if (pos <= 0.0) pos = p->vdjGetValue ("get_prelisten_pos");
+                if (pos >= 0.0)
+                {
+                    double newPos = (pos <= 1.001) ? pos * 100.0 : pos;
+                    if (newPos < 0.0)   newPos = 0.0;
+                    if (newPos > 100.0) newPos = 100.0;
+                    if (!p->prelistenSeeking)
+                        p->prelistenPos = newPos;
+                    InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
+                }
+            }
+            return 0;
+        }
+
         if (wParam != TIMER_BROWSE_POLL) break;
 
         // ── Visibility: show only when VDJ process is foreground ──────────────
@@ -987,20 +1008,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                             SendMessageW (p->hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
                     }
                 }
-            }
-        }
-
-        // ── Prelisten position update ─────────────────────────────────────────
-        if (p->prelistenActive && p->activeTab == 2)
-        {
-            double pos = p->vdjGetValue ("prelisten_pos");
-            if (pos <= 0.0) pos = p->vdjGetValue ("get_prelisten_pos");
-            if (pos < 0.0) pos = 0.0;
-            if (pos > 100.0) pos = 100.0;
-            if (std::abs (pos - p->prelistenPos) > 0.4)
-            {
-                p->prelistenPos = pos;
-                InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
             }
         }
 
@@ -1133,7 +1140,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case IDC_BTN_PRELISTEN:
             p->prelistenActive = !p->prelistenActive;
             p->vdjSend (p->prelistenActive ? "prelisten" : "prelisten_stop");
-            if (!p->prelistenActive) p->prelistenPos = 0.0;
+            if (p->prelistenActive)
+                SetTimer (hwnd, TIMER_WAVE_UPDATE, 50, nullptr);
+            else
+            {
+                KillTimer (hwnd, TIMER_WAVE_UPDATE);
+                p->prelistenPos = 0.0;
+                p->prelistenSeeking = false;
+            }
             SetWindowTextW (p->hBtnPrelisten, p->prelistenActive ? L"\u23F8" : L"\u25B6");
             InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
             break;
@@ -1184,7 +1198,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case IDC_BTN_YEAR_RANGE:
         {
             static const int      kYrVals[]   = { 0, 1, 2, 3, 5, 10 };
-            static const wchar_t* kYrLabels[] = { L"\u00B10 YRS", L"\u00B11 YR", L"\u00B12 YRS", L"\u00B13 YRS", L"\u00B15 YRS", L"\u00B110 YRS" };
+            static const wchar_t* kYrLabels[] = { L"\u00B10", L"\u00B11", L"\u00B12", L"\u00B13", L"\u00B15", L"\u00B110" };
             int curIdx = 0;
             for (int i = 0; i < 6; ++i)
                 if (kYrVals[i] == p->yearRange) { curIdx = i; break; }
@@ -1545,9 +1559,67 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         return (LRESULT) (p ? p->panelBrush : GetStockObject (NULL_BRUSH));
     }
 
+    // ── Prelisten waveform click-to-seek ────────────────────────────────────
+    case WM_LBUTTONDOWN:
+    {
+        if (!p) break;
+        POINT pt = { GET_X_LPARAM (lParam), GET_Y_LPARAM (lParam) };
+        if (p->prelistenActive && PtInRect (&p->prelistenWaveRect, pt))
+        {
+            int w = p->prelistenWaveRect.right - p->prelistenWaveRect.left;
+            if (w > 0)
+            {
+                int x = pt.x - p->prelistenWaveRect.left;
+                if (x < 0) x = 0;
+                if (x > w) x = w;
+                p->prelistenPos = (x * 100.0) / w;
+                p->prelistenSeeking = true;
+                SetCapture (hwnd);
+                p->vdjSend ("prelisten_pos " + std::to_string ((int) p->prelistenPos) + "%");
+                InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
+            }
+            return 0;
+        }
+        break;
+    }
+
+    case WM_MOUSEMOVE:
+    {
+        if (!p || !p->prelistenSeeking || !(wParam & MK_LBUTTON)) break;
+        POINT pt = { GET_X_LPARAM (lParam), GET_Y_LPARAM (lParam) };
+        int w = p->prelistenWaveRect.right - p->prelistenWaveRect.left;
+        if (w > 0)
+        {
+            int x = pt.x - p->prelistenWaveRect.left;
+            if (x < 0) x = 0;
+            if (x > w) x = w;
+            p->prelistenPos = (x * 100.0) / w;
+            p->vdjSend ("prelisten_pos " + std::to_string ((int) p->prelistenPos) + "%");
+            InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
+        }
+        return 0;
+    }
+
+    case WM_LBUTTONUP:
+    {
+        if (p && p->prelistenSeeking)
+        {
+            p->prelistenSeeking = false;
+            ReleaseCapture();
+        }
+        break;
+    }
+
+    case WM_CAPTURECHANGED:
+    {
+        if (p) p->prelistenSeeking = false;
+        break;
+    }
+
     case WM_DESTROY:
         KillTimer (hwnd, TIMER_BROWSE_POLL);
         KillTimer (hwnd, TIMER_SMART_SEARCH);
+        KillTimer (hwnd, TIMER_WAVE_UPDATE);
         return 0;
     }
 

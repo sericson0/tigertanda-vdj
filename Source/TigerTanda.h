@@ -67,6 +67,7 @@ enum CtrlId
 
 inline constexpr UINT_PTR TIMER_BROWSE_POLL   = 1;
 inline constexpr UINT_PTR TIMER_SMART_SEARCH = 2;
+inline constexpr UINT_PTR TIMER_WAVE_UPDATE  = 3;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Font size constants (pt — passed to createFont)
@@ -195,6 +196,7 @@ public:
 
     // ── Prelisten ────────────────────────────────────────────────────────────
     bool              prelistenActive    = false;
+    bool              prelistenSeeking   = false;
     double            prelistenPos       = 0.0;
     RECT              prelistenWaveRect  = {};
     std::vector<int>  prelistenWaveBins;
