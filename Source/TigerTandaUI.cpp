@@ -1481,7 +1481,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             const int rw      = r.right - r.left;
             const int yearW   = 36;
-            const int artistW = rw * 30 / 100;
+            const int artistW = rw * 40 / 100;
             const int titleW  = rw - artistW - yearW - 6;
             const int tx      = r.left + 4;
 
@@ -1491,9 +1491,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             drawText (hdc, titleR,  bi.title,  TCol::textBright, p->fontBold,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, bi.artist, TCol::textDim,    p->fontNormal,
+            drawText (hdc, artistR, bi.artist, TCol::textDim,    p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, yearR,   bi.year,   TCol::textDim,    p->fontNormal,
+            drawText (hdc, yearR,   bi.year,   TCol::textDim,    p->fontSmall,
                       DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
