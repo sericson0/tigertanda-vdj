@@ -165,7 +165,7 @@ public:
 
     // ── Filters ─────────────────────────────────────────────────────────────
     bool filterSameArtist    = true;
-    bool filterSameSinger    = false;
+    bool filterSameSinger    = true;
     bool filterSameGrouping  = false;
     bool filterSameGenre     = true;
     bool filterSameOrchestra = false;
@@ -175,7 +175,7 @@ public:
     bool filterUseYearRange  = true;   // whether year range filter applies
 
     // ── Tab ─────────────────────────────────────────────────────────────────
-    int  activeTab    = 0;    // 0=Track, 1=Matches, 2=Browse, 3=Settings
+    int  activeTab    = 3;    // 0=Track, 1=Matches, 2=Browse, 3=Settings (default to Settings on first launch)
     int  activeHowTab = 0;    // 0=Overview, 1=Track, 2=Matches, 3=Browser, 4=Filters
 
     // ── Browser/deck polling ─────────────────────────────────────────────────
