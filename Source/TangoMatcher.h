@@ -8,18 +8,11 @@ struct TgRecord
     std::wstring singer, composer, author, label, master, grouping, arranger;
     std::wstring pianist, bassist, bandoneons, strings;
     std::wstring normTitle;
-
-    std::wstring getLeaderLastName() const;
-    std::wstring getLeaderFirstName() const;
-    std::wstring getSingerLastNames() const;
-    std::wstring buildArtist (const std::wstring& format) const;
-    std::wstring buildFilename (const std::wstring& format) const;
 };
 
 struct TgMatchResult
 {
-    int   recordIndex = -1;
-    float score       = 0.0f;
+    float score = 0.0f;
     TgRecord record;
 };
 

@@ -242,8 +242,9 @@ public:
     HFONT fontSmallBold = nullptr;  // FONT_SIZE_SMALL pt bold (inline bold in Settings content)
     HFONT fontDetail    = nullptr;  // FONT_SIZE_DETAIL pt regular (secondary rows, +4pt)
     HFONT fontTitle     = nullptr;  // FONT_SIZE_BRAND pt bold (Tiger Tanda brand text)
-    HBRUSH panelBrush  = nullptr;
-    HBRUSH cardBrush   = nullptr;
+    HBRUSH panelBrush     = nullptr;
+    HBRUSH cardBrush      = nullptr;
+    HBRUSH searchBoxBrush = nullptr;
     ULONG_PTR gdiplusToken = 0;
     void*     logoImage    = nullptr;  // Gdiplus::Image* cached logo (opaque to avoid header dep)
 

@@ -2,4 +2,4 @@
 
 #define IDR_LOGO 101
 
-IDR_LOGO RCDATA "logo.png"
+IDR_LOGO RCDATA "../TigerTandaLogoV2.png"

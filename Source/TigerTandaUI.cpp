@@ -831,12 +831,34 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             if (!p->logoImage)
             {
-                fs::path logoPath = p->settingsPath.parent_path() / L"TigerTandaLogoV2.png";
-                auto* img = new Gdiplus::Image (logoPath.c_str());
-                if (img->GetLastStatus() == Gdiplus::Ok)
-                    p->logoImage = img;
-                else
-                    delete img;
+                HRSRC hRes = FindResource (p->hInstance, MAKEINTRESOURCE (IDR_LOGO), RT_RCDATA);
+                if (hRes)
+                {
+                    HGLOBAL hData = LoadResource (p->hInstance, hRes);
+                    DWORD   sz    = SizeofResource (p->hInstance, hRes);
+                    if (hData && sz > 0)
+                    {
+                        void* pData = LockResource (hData);
+                        HGLOBAL hMem = GlobalAlloc (GMEM_MOVEABLE, sz);
+                        if (hMem)
+                        {
+                            memcpy (GlobalLock (hMem), pData, sz);
+                            GlobalUnlock (hMem);
+                            IStream* stream = nullptr;
+                            if (SUCCEEDED (CreateStreamOnHGlobal (hMem, TRUE, &stream)))
+                            {
+                                auto* img = new Gdiplus::Image (stream);
+                                if (img->GetLastStatus() == Gdiplus::Ok)
+                                    p->logoImage = img;
+                                else
+                                    delete img;
+                                stream->Release();
+                            }
+                            else
+                                GlobalFree (hMem);
+                        }
+                    }
+                }
             }
 
             if (p->logoImage)
@@ -1534,11 +1556,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         // Muted background for search input boxes (less harsh than pure black)
         if (p && (hed == p->hEditTitle || hed == p->hEditArtist))
         {
-            const COLORREF searchBg = RGB (32, 36, 52);
-            SetBkColor   (hdc, searchBg);
+            SetBkColor   (hdc, RGB (32, 36, 52));
             SetTextColor (hdc, TCol::textNormal);
-            static HBRUSH searchBoxBrush = CreateSolidBrush (searchBg);
-            return (LRESULT) searchBoxBrush;
+            return (LRESULT) p->searchBoxBrush;
         }
         SetBkColor   (hdc, TCol::card);
         SetTextColor (hdc, TCol::textBright);
@@ -1620,6 +1640,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         KillTimer (hwnd, TIMER_BROWSE_POLL);
         KillTimer (hwnd, TIMER_SMART_SEARCH);
         KillTimer (hwnd, TIMER_WAVE_UPDATE);
+        if (p && p->hTooltip) { DestroyWindow (p->hTooltip); p->hTooltip = nullptr; }
         return 0;
     }
 

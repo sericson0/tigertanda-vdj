@@ -30,8 +30,9 @@ TigerTandaPlugin::TigerTandaPlugin()
     fontSmall     = createFont (FONT_SIZE_SMALL);
     fontSmallBold = createFont (FONT_SIZE_SMALL,  FW_BOLD);
     fontDetail    = createFont (FONT_SIZE_DETAIL);
-    panelBrush = CreateSolidBrush (TCol::panel);
-    cardBrush  = CreateSolidBrush (TCol::card);
+    panelBrush     = CreateSolidBrush (TCol::panel);
+    cardBrush      = CreateSolidBrush (TCol::card);
+    searchBoxBrush = CreateSolidBrush (RGB (32, 36, 52));
 
     Gdiplus::GdiplusStartupInput gdiplusInput;
     Gdiplus::GdiplusStartup (&gdiplusToken, &gdiplusInput, nullptr);
@@ -46,8 +47,9 @@ TigerTandaPlugin::~TigerTandaPlugin()
     if (fontSmall)     DeleteObject (fontSmall);
     if (fontSmallBold) DeleteObject (fontSmallBold);
     if (fontDetail)    DeleteObject (fontDetail);
-    if (panelBrush) DeleteObject (panelBrush);
-    if (cardBrush)  DeleteObject (cardBrush);
+    if (panelBrush)     DeleteObject (panelBrush);
+    if (cardBrush)      DeleteObject (cardBrush);
+    if (searchBoxBrush) DeleteObject (searchBoxBrush);
     delete reinterpret_cast<Gdiplus::Image*> (logoImage);
     logoImage = nullptr;
     if (gdiplusToken) Gdiplus::GdiplusShutdown (gdiplusToken);

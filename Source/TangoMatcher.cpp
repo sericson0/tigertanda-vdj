@@ -358,9 +358,8 @@ std::vector<TgMatchResult> TangoMatcher::findCandidates (const std::wstring& tit
         for (int i = 0; i < count; ++i)
         {
             TgMatchResult mr;
-            mr.recordIndex = exact[i].idx;
-            mr.score       = exact[i].display;
-            mr.record      = records[mr.recordIndex];
+            mr.score  = exact[i].display;
+            mr.record = records[exact[i].idx];
             results.push_back (mr);
         }
         return results;
@@ -384,9 +383,8 @@ std::vector<TgMatchResult> TangoMatcher::findCandidates (const std::wstring& tit
     for (int i = 0; i < count; ++i)
     {
         TgMatchResult mr;
-        mr.recordIndex = scored[i].idx;
-        mr.score       = scored[i].display;
-        mr.record      = records[mr.recordIndex];
+        mr.score  = scored[i].display;
+        mr.record = records[scored[i].idx];
         results.push_back (mr);
     }
     return results;
@@ -555,9 +553,8 @@ std::vector<TgMatchResult> TangoMatcher::findCandidatesForArtist (const std::wst
     for (int i = 0; i < count; ++i)
     {
         TgMatchResult mr;
-        mr.recordIndex = scored[i].idx;
-        mr.score       = scored[i].display;
-        mr.record      = records[mr.recordIndex];
+        mr.score  = scored[i].display;
+        mr.record = records[scored[i].idx];
         results.push_back (mr);
     }
     return results;
@@ -593,118 +590,3 @@ std::wstring TangoMatcher::getLastName (const std::wstring& fullName)
     return last;
 }
 
-std::wstring TgRecord::getLeaderLastName() const
-{
-    return TangoMatcher::getLastName (bandleader);
-}
-
-std::wstring TgRecord::getLeaderFirstName() const
-{
-    auto trimmed = TangoMatcher::trim (bandleader);
-    if (trimmed.empty()) return {};
-
-    auto comma = trimmed.find (L',');
-    if (comma != std::wstring::npos)
-    {
-        // Preserve compound first names in "Last, First Middle" style.
-        return TangoMatcher::trim (trimmed.substr (comma + 1));
-    }
-
-    auto space = trimmed.find (L' ');
-    return (space != std::wstring::npos) ? TangoMatcher::trim (trimmed.substr (0, space)) : trimmed;
-}
-
-std::wstring TgRecord::getSingerLastNames() const
-{
-    if (singer.empty()) return {};
-
-    std::vector<std::wstring> singers;
-    std::wstring temp = singer;
-
-    // Replace " and " / " y " with comma
-    auto replaceAll = [] (std::wstring& s, const std::wstring& from, const std::wstring& to) {
-        size_t pos = 0;
-        while ((pos = s.find (from, pos)) != std::wstring::npos)
-        {
-            s.replace (pos, from.size(), to);
-            pos += to.size();
-        }
-    };
-    replaceAll (temp, L" and ", L",");
-    replaceAll (temp, L" y ",  L",");
-
-    std::wistringstream ss (temp);
-    std::wstring part;
-    while (std::getline (ss, part, L','))
-    {
-        auto t = part;
-        auto start = t.find_first_not_of (L" \t");
-        auto end   = t.find_last_not_of (L" \t");
-        if (start != std::wstring::npos)
-        {
-            auto trimmed = t.substr (start, end - start + 1);
-            if (!trimmed.empty())
-                singers.push_back (TangoMatcher::getLastName (trimmed));
-        }
-    }
-
-    std::wstring result;
-    for (size_t i = 0; i < singers.size(); ++i)
-    {
-        if (i > 0) result += L" - ";
-        result += singers[i];
-    }
-    return result;
-}
-
-std::wstring TgRecord::buildArtist (const std::wstring& format) const
-{
-    if (format == L"leader")          return bandleader;
-    if (format == L"leader_last")     return getLeaderLastName();
-    if (format == L"leader - singer")
-        return singer.empty() ? bandleader : bandleader + L" - " + singer;
-    if (format == L"leader_last - singer_last")
-    {
-        auto sln = getSingerLastNames();
-        return sln.empty() ? getLeaderLastName() : getLeaderLastName() + L" - " + sln;
-    }
-    return bandleader + L" - " + singer;
-}
-
-std::wstring TgRecord::buildFilename (const std::wstring& format) const
-{
-    std::wstring result = format;
-
-    auto replaceAll = [] (std::wstring& s, const std::wstring& from, const std::wstring& to) {
-        size_t pos = 0;
-        while ((pos = s.find (from, pos)) != std::wstring::npos)
-        {
-            s.replace (pos, from.size(), to);
-            pos += to.size();
-        }
-    };
-
-    replaceAll (result, L"leader first",   getLeaderFirstName());
-    replaceAll (result, L"orchestra first", getLeaderFirstName());
-    replaceAll (result, L"leader last",    getLeaderLastName());
-    replaceAll (result, L"orchestra last", getLeaderLastName());
-    replaceAll (result, L"leader",         bandleader);
-    replaceAll (result, L"orchestra",      bandleader);
-    replaceAll (result, L"singer last",    getSingerLastNames());
-    replaceAll (result, L"title",          title);
-    replaceAll (result, L"year",           year);
-
-    std::wstring sanitized;
-    for (wchar_t c : result)
-        if (c != L'/' && c != L'\\' && c != L'?' && c != L'%' && c != L'*'
-            && c != L':' && c != L'|' && c != L'"' && c != L'<' && c != L'>' && c != L'.')
-            sanitized += c;
-
-    auto start = sanitized.find_first_not_of (L" \t");
-    auto end   = sanitized.find_last_not_of (L" \t");
-    if (start == std::wstring::npos) return {};
-    sanitized = sanitized.substr (start, end - start + 1);
-
-    if (sanitized.size() > 115) sanitized = sanitized.substr (0, 115);
-    return sanitized + L".flac";
-}
