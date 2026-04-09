@@ -340,6 +340,7 @@ void TigerTandaPlugin::resetAll()
     if (hResultsList) SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
     if (hEditTitle)   SetWindowTextW (hEditTitle,  L"");
     if (hEditArtist)  SetWindowTextW (hEditArtist, L"");
+    if (hEditYear)    SetWindowTextW (hEditYear,   L"");
 
     if (hDlg) InvalidateRect (hDlg, nullptr, FALSE);
 }
