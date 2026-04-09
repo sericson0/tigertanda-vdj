@@ -281,7 +281,8 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     const int topY = (TOP_H - TAB_BTN_H) / 2;
     MoveWindow (p->hBtnClose, DLG_W - 26, topY, 22, TAB_BTN_H, FALSE);
     ShowWindow (p->hBtnClose, SW_SHOW);
-    MoveWindow (p->hBtnTabSettings, DLG_W - 50, topY, 22, TAB_BTN_H, FALSE);
+    const int toggleW = 140;
+    MoveWindow (p->hBtnTabSettings, DLG_W - 26 - PAD - toggleW, topY, toggleW, TAB_BTN_H, FALSE);
     ShowWindow (p->hBtnTabSettings, SW_SHOW);
 
     // Main view (activeTab == 0)
@@ -1224,11 +1225,54 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (di->CtlType == ODT_BUTTON)
         {
-            // Settings gear button
+            // Segmented pill toggle: Tanda | Settings
             if (di->CtlID == IDC_BTN_TAB_SETTINGS)
             {
-                COLORREF bg = (p->activeTab == 1) ? TCol::buttonHover : TCol::panel;
-                drawOwnerButton (di, L"\u26ED", bg, TCol::textNormal, p->fontNormal, p->hoveredBtn == di->hwndItem);
+                HDC hdc = di->hDC;
+                RECT r = di->rcItem;
+                bool hovered = (di->itemState & ODS_HOTLIGHT) != 0 || p->hoveredBtn == di->hwndItem;
+                bool pressed = (di->itemState & ODS_SELECTED) != 0;
+
+                COLORREF bg = hovered ? TCol::buttonHover : TCol::buttonBg;
+                if (pressed) { BYTE b = GetRValue (bg) + 8; bg = RGB (b > 255 ? 255 : b, GetGValue (bg) + 8, GetBValue (bg) + 8); }
+
+                HRGN rgn = CreateRoundRectRgn (r.left, r.top, r.right, r.bottom, 10, 10);
+                SelectClipRgn (hdc, rgn);
+                fillRect (hdc, r, bg);
+                SelectClipRgn (hdc, nullptr);
+                DeleteObject (rgn);
+
+                HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
+                HPEN oldPen = (HPEN) SelectObject (hdc, pen);
+                HBRUSH oldBr = (HBRUSH) SelectObject (hdc, GetStockObject (NULL_BRUSH));
+                RoundRect (hdc, r.left, r.top, r.right, r.bottom, 10, 10);
+                SelectObject (hdc, oldPen);
+                SelectObject (hdc, oldBr);
+                DeleteObject (pen);
+
+                int midX = (r.left + r.right) / 2;
+                bool onSettings = (p->activeTab == 1);
+
+                // Left half: "Tanda"
+                RECT leftR { r.left, r.top, midX, r.bottom };
+                COLORREF leftFg = onSettings ? TCol::textDim : TCol::accentBrt;
+                HFONT leftFont  = onSettings ? p->fontSmall  : p->fontBold;
+                drawText (hdc, leftR, L"Tanda", leftFg, leftFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+                // Right half: "Settings"
+                RECT rightR { midX, r.top, r.right, r.bottom };
+                COLORREF rightFg = onSettings ? TCol::accentBrt : TCol::textDim;
+                HFONT rightFont  = onSettings ? p->fontBold     : p->fontSmall;
+                drawText (hdc, rightR, L"Settings", rightFg, rightFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+                // Center divider
+                HPEN divPen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
+                HPEN oldDiv = (HPEN) SelectObject (hdc, divPen);
+                MoveToEx (hdc, midX, r.top + 4, nullptr);
+                LineTo   (hdc, midX, r.bottom - 4);
+                SelectObject (hdc, oldDiv);
+                DeleteObject (divPen);
+
                 return TRUE;
             }
 
