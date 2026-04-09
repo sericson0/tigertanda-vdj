@@ -21,7 +21,7 @@ enum CtrlId
     // Track tab
     IDC_EDIT_TITLE         = 2101,
     IDC_EDIT_ARTIST        = 2102,
-    IDC_BTN_SEARCH         = 2103,
+    IDC_EDIT_YEAR          = 2104,
     IDC_CANDIDATES_LIST    = 2201,
 
     // Settings tab (filter buttons)
@@ -37,15 +37,11 @@ enum CtrlId
 
     // Matches tab
     IDC_RESULTS_LIST       = 2601,
-    IDC_BTN_SEARCH_VDJ     = 2703,
 
     // Common
     IDC_BTN_CLOSE          = 2701,
 
     // Tab strip (always in top bar)
-    IDC_BTN_TAB_TRACK      = 2802,
-    IDC_BTN_TAB_MATCHES    = 2803,
-    IDC_BTN_TAB_BROWSE     = 2804,
     IDC_BTN_TAB_SETTINGS   = 2805,
 
     // Browse tab
@@ -65,9 +61,10 @@ enum CtrlId
 //  Timer IDs
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr UINT_PTR TIMER_BROWSE_POLL   = 1;
-inline constexpr UINT_PTR TIMER_SMART_SEARCH = 2;
-inline constexpr UINT_PTR TIMER_WAVE_UPDATE  = 3;
+inline constexpr UINT_PTR TIMER_BROWSE_POLL     = 1;
+inline constexpr UINT_PTR TIMER_SMART_SEARCH   = 2;
+inline constexpr UINT_PTR TIMER_WAVE_UPDATE    = 3;
+inline constexpr UINT_PTR TIMER_SEARCH_DEBOUNCE = 4;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Font size constants (pt — passed to createFont)
@@ -82,20 +79,21 @@ inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand 
 //  Layout constants (compact / tab mode only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_H          = 336;
-inline constexpr int DLG_W          = 360;
-inline constexpr int TOP_H          = 40;    // top bar height (tabs + close)
+inline constexpr int DLG_H          = 380;
+inline constexpr int DLG_W          = 700;
+inline constexpr int TOP_H          = 36;    // slightly shorter top bar
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;
 inline constexpr int BRAND_H        = 26;    // Tiger Tanda brand text row at bottom
-inline constexpr int CAND_ITEM_H    = 46;    // increased for larger secondary text
+inline constexpr int CAND_ITEM_H    = 24;    // single-row, aligned with inputs (was 46)
 inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
 inline constexpr int RESULT_ITEM_H  = 22;    // increased from 20
 inline constexpr int BROWSE_ITEM_H  = 24;    // increased from 22
 inline constexpr int DETAIL_BOX_H   = 82;    // 4-row: Bandleader·Singer + Date·Genre·Label + Orchestra + Group
 inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
-inline constexpr int TRACK_SEARCH_GAP = 14;  // gap between search row and candidates list
+inline constexpr int TRACK_SEARCH_GAP = 4;   // reduced gap (was 14)
+inline constexpr int LEFT_COL_PCT   = 60;    // left column percentage
 
 // Window class name
 inline constexpr const wchar_t* WND_CLASS = L"TigerTandaVdjDialog";
@@ -175,7 +173,7 @@ public:
     bool filterUseYearRange  = true;   // whether year range filter applies
 
     // ── Tab ─────────────────────────────────────────────────────────────────
-    int  activeTab    = 3;    // 0=Track, 1=Matches, 2=Browse, 3=Settings (default to Settings on first launch)
+    int  activeTab    = 0;    // 0=Main, 1=Settings
     int  activeHowTab = 0;    // 0=Overview, 1=Track, 2=Matches, 3=Browser, 4=Filters
 
     // ── Browser/deck polling ─────────────────────────────────────────────────
@@ -210,7 +208,7 @@ public:
     HWND hDlg              = nullptr;
     HWND hEditTitle        = nullptr;
     HWND hEditArtist       = nullptr;
-    HWND hBtnSearch        = nullptr;
+    HWND hEditYear         = nullptr;
     HWND hCandList         = nullptr;
     HWND hChkArtist        = nullptr;
     HWND hChkSinger        = nullptr;
@@ -220,17 +218,13 @@ public:
     HWND hChkLabel         = nullptr;
     HWND hChkTrack         = nullptr;
     HWND hResultsList      = nullptr;
-    HWND hBtnSearchVdj     = nullptr;
     HWND hBtnClose         = nullptr;
-    HWND hBtnTabTrack      = nullptr;
-    HWND hBtnTabMatches    = nullptr;
-    HWND hBtnTabBrowse     = nullptr;
     HWND hBtnTabSettings   = nullptr;
     HWND hBrowseList       = nullptr;
     HWND hBtnPrelisten     = nullptr;
     HWND hBtnAddEnd        = nullptr;
     HWND hBtnYearToggle    = nullptr;
-    HWND hBtnYearRange   = nullptr;
+    HWND hBtnYearRange     = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
     HWND hoveredBtn        = nullptr;   // currently hovered owner-draw button (for hover highlight)
