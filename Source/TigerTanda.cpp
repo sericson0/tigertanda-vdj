@@ -299,7 +299,7 @@ void TigerTandaPlugin::loadSettings()
             else if (key == "activeTab")
             {
                 activeTab = std::stoi (val);
-                if (activeTab < 0 || activeTab > 3) activeTab = 0;
+                if (activeTab < 0 || activeTab > 1) activeTab = 0;
             }
         }
         catch (...) {}
