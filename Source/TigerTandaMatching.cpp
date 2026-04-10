@@ -403,6 +403,8 @@ void TigerTandaPlugin::runSmartSearch()
         bi.artist       = vdjGetString ("get_browsed_song 'artist'");
         bi.year         = vdjGetString ("get_browsed_song 'year'");
         bi.filePath     = vdjGetString ("get_browsed_filepath");
+        bi.album        = vdjGetString ("get_browsed_song 'album'");
+        bi.comment      = vdjGetString ("get_browsed_song 'comment'");
         bi.browserIndex = i;
 
         if (bi.title.empty() && bi.artist.empty())
@@ -453,6 +455,9 @@ void TigerTandaPlugin::runSmartSearch()
         if (stars < 0) stars = 0;
         if (stars > 5) stars = 5;
         if (playCount < 0) playCount = 0;
+
+        bi.stars     = stars;
+        bi.playCount = playCount;
 
         float starsNorm    = (float) stars * 20.0f;
         float playRaw      = (float) playCount * 5.0f;

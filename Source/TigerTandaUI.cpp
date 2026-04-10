@@ -41,6 +41,170 @@ static TigerTandaPlugin* getPlugin (HWND hwnd)
     return reinterpret_cast<TigerTandaPlugin*> (GetWindowLongPtrW (hwnd, GWLP_USERDATA));
 }
 
+// Build the tooltip text string for a given row in the matches list.
+static std::wstring buildMatchTooltip (const TgRecord& rec)
+{
+    std::wstring s;
+    auto addLine = [&] (const wchar_t* label, const std::wstring& val)
+    {
+        if (val.empty()) return;
+        if (!s.empty()) s += L"\r\n";
+        s += label;
+        s += val;
+    };
+    addLine (L"Title: ",      rec.title);
+    addLine (L"Bandleader: ", rec.bandleader);
+    addLine (L"Singer: ",     rec.singer);
+    addLine (L"Date: ",       rec.date);
+    addLine (L"Genre: ",      rec.genre);
+    addLine (L"Label: ",      rec.label);
+    addLine (L"Orchestra: ",  rec.orchestra);
+    addLine (L"Composer: ",   rec.composer);
+    addLine (L"Author: ",     rec.author);
+    addLine (L"Arranger: ",   rec.arranger);
+    addLine (L"Group: ",      rec.grouping);
+    return s;
+}
+
+// Build the tooltip text string for a given row in the browse list.
+static std::wstring buildBrowseTooltip (const BrowseItem& bi)
+{
+    std::wstring s;
+    auto addLine = [&] (const wchar_t* label, const std::wstring& val)
+    {
+        if (val.empty()) return;
+        if (!s.empty()) s += L"\r\n";
+        s += label;
+        s += val;
+    };
+    addLine (L"Title: ",  bi.title);
+    addLine (L"Artist: ", bi.artist);
+    addLine (L"Album: ",  bi.album);
+    addLine (L"Year: ",   bi.year);
+
+    if (bi.stars > 0)
+    {
+        if (!s.empty()) s += L"\r\n";
+        s += L"Stars: ";
+        s += std::to_wstring (bi.stars);
+    }
+    if (bi.playCount > 0)
+    {
+        if (!s.empty()) s += L"\r\n";
+        s += L"Playcount: ";
+        s += std::to_wstring (bi.playCount);
+    }
+
+    addLine (L"Notes: ",    bi.comment);
+    addLine (L"File: ",     bi.filePath);
+    return s;
+}
+
+// Subclass proc for matches and browse listboxes — tracks mouse movement
+// and updates a tracking tooltip with per-row metadata. Hides when the
+// mouse leaves the control.
+static LRESULT CALLBACK listTooltipSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                                 UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    auto* p = reinterpret_cast<TigerTandaPlugin*> (dwRefData);
+    if (!p || !p->hListTooltip) return DefSubclassProc (hwnd, msg, wp, lp);
+
+    switch (msg)
+    {
+    case WM_MOUSEMOVE:
+    {
+        // Which item is under the mouse?
+        POINT pt = { GET_X_LPARAM (lp), GET_Y_LPARAM (lp) };
+        DWORD itemInfo = (DWORD) SendMessageW (hwnd, LB_ITEMFROMPOINT, 0, MAKELPARAM (pt.x, pt.y));
+        bool outside = HIWORD (itemInfo) != 0;
+        int item = outside ? -1 : (int) LOWORD (itemInfo);
+
+        // Build text for this row
+        std::wstring text;
+        if (item >= 0)
+        {
+            if (hwnd == p->hResultsList)
+            {
+                if (item < (int) p->results.size())
+                    text = buildMatchTooltip (p->results[item]);
+            }
+            else if (hwnd == p->hBrowseList)
+            {
+                if (item < (int) p->browseItems.size())
+                    text = buildBrowseTooltip (p->browseItems[item]);
+            }
+        }
+
+        // Only bother the tooltip when the hovered row actually changes.
+        if (hwnd != p->hoveredList || item != p->hoveredListItem)
+        {
+            p->hoveredList = hwnd;
+            p->hoveredListItem = item;
+
+            TOOLINFOW ti {};
+            ti.cbSize = sizeof (ti);
+            ti.uFlags = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
+            ti.hwnd   = GetParent (hwnd);
+            ti.uId    = (UINT_PTR) hwnd;
+            ti.lpszText = text.empty() ? (LPWSTR) L"" : (LPWSTR) text.c_str();
+
+            if (text.empty())
+            {
+                SendMessageW (p->hListTooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM) &ti);
+            }
+            else
+            {
+                SendMessageW (p->hListTooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM) &ti);
+                // Position below-right of the cursor
+                POINT screenPt = pt;
+                ClientToScreen (hwnd, &screenPt);
+                SendMessageW (p->hListTooltip, TTM_TRACKPOSITION, 0,
+                              MAKELPARAM (screenPt.x + 14, screenPt.y + 18));
+                SendMessageW (p->hListTooltip, TTM_TRACKACTIVATE, TRUE, (LPARAM) &ti);
+            }
+        }
+        else if (item >= 0)
+        {
+            // Same row, just reposition to follow the cursor
+            POINT screenPt = pt;
+            ClientToScreen (hwnd, &screenPt);
+            SendMessageW (p->hListTooltip, TTM_TRACKPOSITION, 0,
+                          MAKELPARAM (screenPt.x + 14, screenPt.y + 18));
+        }
+
+        // Request WM_MOUSELEAVE so we can hide the tooltip when the mouse exits.
+        TRACKMOUSEEVENT tme {};
+        tme.cbSize = sizeof (tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
+        TrackMouseEvent (&tme);
+        break;
+    }
+
+    case WM_MOUSELEAVE:
+    {
+        TOOLINFOW ti {};
+        ti.cbSize = sizeof (ti);
+        ti.uFlags = TTF_IDISHWND;
+        ti.hwnd = GetParent (hwnd);
+        ti.uId  = (UINT_PTR) hwnd;
+        SendMessageW (p->hListTooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM) &ti);
+        if (p->hoveredList == hwnd)
+        {
+            p->hoveredList = nullptr;
+            p->hoveredListItem = -1;
+        }
+        break;
+    }
+
+    case WM_NCDESTROY:
+        RemoveWindowSubclass (hwnd, listTooltipSubclassProc, uIdSubclass);
+        break;
+    }
+
+    return DefSubclassProc (hwnd, msg, wp, lp);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Owner-draw buttons (flat dark style)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -330,7 +494,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int usableW = lw - sbW;
 
         // Search inputs — below column headers (headers are painted, 14px)
-        int ly = TOP_H + PAD + 14;
+        int ly = TOP_H + TOP_GAP + 14;
         const int gap = 4;
         const int yearW = 52;
         const int titleW = (usableW - yearW - gap * 2) * 55 / 100;
@@ -356,7 +520,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int rw = rightW - PAD - COL_GAP / 2;
 
         // Detail box starts at the top of the right column (no header)
-        int ry = TOP_H + PAD;
+        int ry = TOP_H + TOP_GAP;
 
         // Detail box position (painted in WM_PAINT, not a control)
         int detailBot = ry + DETAIL_BOX_H;
@@ -660,6 +824,38 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             addTip (p->hBtnYearRange,    L"Click to cycle year range");
         }
 
+        // Dedicated tracking tooltip for per-row listbox metadata. Uses
+        // TTF_TRACK so we can move it manually as the user hovers over
+        // different rows (standard dwell tooltips only fire once per HWND).
+        p->hListTooltip = CreateWindowExW (WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+                                           WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+                                           CW_USEDEFAULT, CW_USEDEFAULT,
+                                           CW_USEDEFAULT, CW_USEDEFAULT,
+                                           hwnd, nullptr, nullptr, nullptr);
+        if (p->hListTooltip)
+        {
+            SendMessageW (p->hListTooltip, TTM_SETMAXTIPWIDTH, 0, 360);
+            auto addListTool = [&] (HWND h)
+            {
+                TOOLINFOW ti {};
+                ti.cbSize = sizeof (ti);
+                ti.uFlags = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
+                ti.hwnd   = hwnd;
+                ti.uId    = (UINT_PTR) h;
+                ti.lpszText = (LPWSTR) L"";
+                SendMessageW (p->hListTooltip, TTM_ADDTOOLW, 0, (LPARAM) &ti);
+            };
+            if (p->hResultsList) addListTool (p->hResultsList);
+            if (p->hBrowseList)  addListTool (p->hBrowseList);
+
+            // Install mouse-move subclass on both lists so we can track the
+            // hovered row and update/position the tooltip dynamically.
+            if (p->hResultsList)
+                SetWindowSubclass (p->hResultsList, listTooltipSubclassProc, 1, (DWORD_PTR) p);
+            if (p->hBrowseList)
+                SetWindowSubclass (p->hBrowseList,  listTooltipSubclassProc, 1, (DWORD_PTR) p);
+        }
+
         // Sync year toggle text (just "YEAR" — active state shown by color)
         SetWindowTextW (p->hBtnYearToggle, L"YEAR");
 
@@ -714,7 +910,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Left column headers — aligned with usable width (reserving scrollbar space)
             const int sbW = GetSystemMetrics (SM_CXVSCROLL);
             const int usableW = lw - sbW;
-            int headerY = TOP_H + PAD;
+            int headerY = TOP_H + TOP_GAP;
             const int gap = 4;
             const int yearW = 52;
             const int titleW = (usableW - yearW - gap * 2) * 55 / 100;
@@ -727,7 +923,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             drawText (hdc, hyR, L"YEAR",   TCol::textDim, p->fontSmall, DT_CENTER | DT_TOP | DT_SINGLELINE);
 
             // "MATCHES (N)" header (no separator line above it)
-            int candBot = TOP_H + PAD + 14 + EDIT_H + TRACK_SEARCH_GAP + CAND_ITEM_H * 3 + 2;
+            int candBot = TOP_H + TOP_GAP + 14 + EDIT_H + TRACK_SEARCH_GAP + CAND_ITEM_H * 3 + 2;
             int matchHeaderY = candBot + 4;
             std::wstring matchLabel = L"MATCHES (" + std::to_wstring (p->results.size()) + L")";
             RECT mhR { lx, matchHeaderY, lx + lw, matchHeaderY + 12 };
@@ -735,7 +931,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             // Detail box — no header label above it, the box's track title
             // row is the header.
-            int detailY = TOP_H + PAD;
+            int detailY = TOP_H + TOP_GAP;
             RECT detR { rx, detailY, rx + rw, detailY + DETAIL_BOX_H };
             if (p->selectedResultIdx >= 0 && p->selectedResultIdx < (int) p->results.size())
                 drawResultDetailBox (hdc, detR, p->results[p->selectedResultIdx],
@@ -1500,21 +1696,19 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             const int artistW = rw - titleW - yearW - gap * 2 - 6;
             const int tx = r.left + 6;
 
-            COLORREF titleCol  = confirmed ? TCol::textBright : TCol::textNormal;
-            COLORREF otherCol  = confirmed ? TCol::textNormal : TCol::textDim;
-
             RECT titleR  { tx,                     r.top, tx + titleW,                     r.bottom };
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            // Title, artist, year — all use fontNormal (same size as the
-            // input boxes above). Confirmed candidate uses the bold variant
-            // on the title for emphasis.
-            drawText (hdc, titleR,  rec.title,         titleCol, confirmed ? p->fontBold : p->fontNormal,
+            // Title always white, same 13pt as the input boxes. When the row
+            // is confirmed (selected), all three columns use the bold
+            // variant for emphasis. Artist and year stay dim gray normally.
+            HFONT rowFont = confirmed ? p->fontBold : p->fontNormal;
+            drawText (hdc, titleR,  rec.title,         TCol::textBright, rowFont,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, formatArtist (rec), otherCol, p->fontNormal,
+            drawText (hdc, artistR, formatArtist (rec), confirmed ? TCol::textBright : TCol::textDim, rowFont,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, yearR,   rec.year,           otherCol, p->fontNormal,
+            drawText (hdc, yearR,   rec.year,           confirmed ? TCol::textBright : TCol::textDim, rowFont,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
@@ -1540,7 +1734,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
-            const int rw      = r.right - r.left;
+            // Reserve scrollbar width on the right so the year column stays
+            // aligned with the input row/candidates whether or not the
+            // listbox is currently tall enough to need a scrollbar.
+            const int sbW = GetSystemMetrics (SM_CXVSCROLL);
+            const int rightEdge = r.right - sbW;
+            const int rw      = rightEdge - r.left;
             const int yearW   = 52;
             const int gap     = 4;
             const int titleW  = (rw - yearW - gap * 2 - 6) * 55 / 100;
@@ -1549,18 +1748,21 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             RECT titleR  { tx,                     r.top, tx + titleW,                     r.bottom };
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
-            RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
+            RECT yearR   { rightEdge - yearW - 2,  r.top, rightEdge - 2,                   r.bottom };
 
-            // All three columns use fontNormal (same size as the input boxes)
-            drawText (hdc, titleR,  rec.title,         TCol::textBright, p->fontBold,
+            // Title is always white and 13pt. Normally unbold; bold when the
+            // row is selected. Artist/year: dim normal by default; white bold
+            // when selected — so the whole selected row pops together.
+            HFONT rowFont = sel ? p->fontBold : p->fontNormal;
+            drawText (hdc, titleR,  rec.title,         TCol::textBright, rowFont,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, formatArtist (rec), TCol::textDim,    p->fontNormal,
+            drawText (hdc, artistR, formatArtist (rec), sel ? TCol::textBright : TCol::textDim, rowFont,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
             std::wstring yearStr = rec.year.empty()
                 ? (rec.date.size() >= 4 ? rec.date.substr (0, 4) : rec.date)
                 : rec.year;
-            drawText (hdc, yearR,   yearStr,            TCol::textDim,    p->fontNormal,
+            drawText (hdc, yearR,   yearStr,            sel ? TCol::textBright : TCol::textDim, rowFont,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
@@ -1760,7 +1962,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         KillTimer (hwnd, TIMER_SMART_SEARCH);
         KillTimer (hwnd, TIMER_WAVE_UPDATE);
         KillTimer (hwnd, TIMER_SEARCH_DEBOUNCE);
-        if (p && p->hTooltip) { DestroyWindow (p->hTooltip); p->hTooltip = nullptr; }
+        if (p && p->hTooltip)     { DestroyWindow (p->hTooltip);     p->hTooltip = nullptr; }
+        if (p && p->hListTooltip) { DestroyWindow (p->hListTooltip); p->hListTooltip = nullptr; }
         return 0;
     }
 

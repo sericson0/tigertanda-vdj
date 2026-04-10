@@ -80,7 +80,8 @@ inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand 
 //  Layout constants (compact / tab mode only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_H          = 420;
+inline constexpr int DLG_H          = 396;
+inline constexpr int TOP_GAP        = 4;     // compact gap below top bar
 inline constexpr int DLG_W          = 700;
 inline constexpr int TOP_H          = 30;    // compact top bar
 inline constexpr int PAD            = 8;
@@ -109,6 +110,10 @@ struct BrowseItem
     std::wstring artist;
     std::wstring year;
     std::wstring filePath;
+    std::wstring album;
+    std::wstring comment;
+    int   stars        = 0;
+    int   playCount    = 0;
     int   browserIndex = -1;   // original index in VDJ browser list
     float score        = 0.0f; // smart search relevance score
 };
@@ -256,7 +261,10 @@ public:
     HWND hBtnYearRange     = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
+    HWND hListTooltip      = nullptr;   // tracking tooltip for per-row listbox metadata
     HWND hoveredBtn        = nullptr;   // currently hovered owner-draw button (for hover highlight)
+    HWND hoveredList       = nullptr;   // listbox currently being hovered, for tooltip tracking
+    int  hoveredListItem   = -1;
 
     // ── GDI resources ────────────────────────────────────────────────────────
     HFONT fontNormal    = nullptr;  // FONT_SIZE_NORMAL pt regular
