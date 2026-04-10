@@ -4,6 +4,7 @@
 //==============================================================================
 
 #include "TigerTanda.h"
+#include "CoverArt.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -52,6 +53,8 @@ TigerTandaPlugin::~TigerTandaPlugin()
     if (searchBoxBrush) DeleteObject (searchBoxBrush);
     delete reinterpret_cast<Gdiplus::Image*> (logoImage);
     logoImage = nullptr;
+    // Must free cached bitmaps before GDI+ shuts down
+    CoverArt::shutdown();
     if (gdiplusToken) Gdiplus::GdiplusShutdown (gdiplusToken);
 }
 

@@ -4,6 +4,7 @@
 //==============================================================================
 
 #include "TigerTanda.h"
+#include "CoverArt.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -330,6 +331,11 @@ void TigerTandaPlugin::runSmartSearch()
     int keep = (int) scored.size() < 5 ? (int) scored.size() : 5;
     for (int i = 0; i < keep; ++i)
         browseItems.push_back (scored[i].item);
+
+    // Eagerly extract cover art so first paint is already cached
+    for (const auto& bi : browseItems)
+        if (!bi.filePath.empty())
+            CoverArt::getForPath (bi.filePath);
 
     // Update cached count so normal polling doesn't immediately overwrite
     browseListCount = totalItems;

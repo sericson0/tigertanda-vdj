@@ -4,6 +4,7 @@
 //==============================================================================
 
 #include "TigerTanda.h"
+#include "CoverArt.h"
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <cmath>
@@ -1486,7 +1487,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             return TRUE;
         }
 
-        // ── Browse list (Title | Artist | Year columns) ───────────────────────
+        // ── Browse list (2 text rows + album art thumbnail on right) ───────────
         if (di->CtlID == IDC_BROWSE_LIST && di->itemID != (UINT) -1)
         {
             if ((int) di->itemID >= (int) p->browseItems.size()) break;
@@ -1500,22 +1501,56 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
-            const int rw      = r.right - r.left;
-            const int yearW   = 36;
-            const int artistW = rw * 40 / 100;
-            const int titleW  = rw - artistW - yearW - 6;
-            const int tx      = r.left + 4;
+            // Album art thumbnail on right (square, full row height minus padding)
+            const int itemH   = r.bottom - r.top;
+            const int artPad  = 4;
+            const int artSize = itemH - artPad * 2;
+            const int artX    = r.right - artSize - artPad;
+            const int artY    = r.top + artPad;
 
-            RECT titleR  { tx,                        r.top, tx + titleW,                     r.bottom };
-            RECT artistR { tx + titleW + 2,            r.top, tx + titleW + 2 + artistW,        r.bottom };
-            RECT yearR   { r.right - yearW - 2,        r.top, r.right - 2,                      r.bottom };
+            auto* coverBmp = reinterpret_cast<Gdiplus::Bitmap*> (
+                CoverArt::getForPath (bi.filePath));
+            if (coverBmp)
+            {
+                Gdiplus::Graphics g (hdc);
+                g.SetInterpolationMode (Gdiplus::InterpolationModeHighQualityBicubic);
+                g.DrawImage (coverBmp, artX, artY, artSize, artSize);
+            }
+            else
+            {
+                // Placeholder: dark rounded square with faint border
+                RECT ar { artX, artY, artX + artSize, artY + artSize };
+                fillRect (hdc, ar, RGB (24, 28, 40));
+                HPEN pn  = CreatePen (PS_SOLID, 1, TCol::cardBorder);
+                HPEN oldP = (HPEN) SelectObject (hdc, pn);
+                HBRUSH oldB = (HBRUSH) SelectObject (hdc, GetStockObject (NULL_BRUSH));
+                Rectangle (hdc, ar.left, ar.top, ar.right, ar.bottom);
+                SelectObject (hdc, oldP);
+                SelectObject (hdc, oldB);
+                DeleteObject (pn);
+            }
 
-            drawText (hdc, titleR,  bi.title,  TCol::textBright, p->fontBold,
+            // Text area to the left of the art
+            const int tx       = r.left + 6;
+            const int textRight = artX - 6;
+            const int yearW    = 40;
+            const int titleW   = textRight - tx - yearW - 4;
+
+            // Row 1 (top half): Title (left) + Year (right)
+            int row1Top = r.top + 4;
+            int row1Bot = r.top + itemH / 2;
+            RECT titleR { tx,                   row1Top, tx + titleW,    row1Bot };
+            RECT yearR  { textRight - yearW,    row1Top, textRight,       row1Bot };
+
+            drawText (hdc, titleR, bi.title, TCol::textBright, p->fontBold,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, bi.artist, TCol::textDim,    p->fontSmall,
-                      DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, yearR,   bi.year,   TCol::textDim,    p->fontSmall,
+            drawText (hdc, yearR,  bi.year,  TCol::textDim,    p->fontSmall,
                       DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
+            // Row 2 (bottom half): Artist, full width of text area
+            RECT artistR { tx, row1Bot, textRight, r.bottom - 4 };
+            drawText (hdc, artistR, bi.artist, TCol::textDim, p->fontSmall,
+                      DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
             HPEN old = (HPEN) SelectObject (hdc, pen);

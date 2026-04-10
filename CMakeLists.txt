@@ -17,6 +17,7 @@ add_library(TigerTanda MODULE
     Source/TigerTandaUI.cpp
     Source/TigerTandaMatching.cpp
     Source/TangoMatcher.cpp
+    Source/CoverArt.cpp
     Source/TigerTanda.def
     Source/TigerTanda.rc
 )
