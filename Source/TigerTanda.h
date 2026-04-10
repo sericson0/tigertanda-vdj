@@ -87,9 +87,9 @@ inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;
 inline constexpr int BRAND_H        = 26;    // Tiger Tanda brand text row at bottom
-inline constexpr int CAND_ITEM_H    = 20;    // small-font row
+inline constexpr int CAND_ITEM_H    = 24;    // 13pt row
 inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
-inline constexpr int RESULT_ITEM_H  = 20;    // small-font row
+inline constexpr int RESULT_ITEM_H  = 24;    // 13pt row
 inline constexpr int BROWSE_ITEM_H  = 46;    // tall rows: 2 text rows + album art thumbnail
 inline constexpr int DETAIL_BOX_H   = 110;   // 5-row: Title + Bandleader·Singer + Date·Genre + Label + Group
 inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
@@ -211,6 +211,8 @@ public:
     // user clicking a different match mid-flight cancels stale results.
     int smartSearchToken = 0;
     int smartSearchActiveToken = 0;
+    int smartSearchRetryCount = 0;  // how many times we've waited for VDJ
+    bool smartSearchNoResults = false;  // true if the last search timed out / empty
     // Folder path saved at start of a search cycle; restored when done
     std::wstring savedBrowseFolder;
     // Raw VDJ search query string used to populate the current browseItems.

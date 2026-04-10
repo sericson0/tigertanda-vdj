@@ -66,11 +66,15 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
 
     // Use artist-aware search when artist is available
     if (!artist.empty())
-        candidates = matcher.findCandidatesForArtist (title, artist, 5, 40.0f);
+        candidates = matcher.findCandidatesForArtist (title, artist, 3, 40.0f);
 
     // Fallback: title-only search
     if (candidates.empty())
-        candidates = matcher.findCandidates (title, 5, 40.0f);
+        candidates = matcher.findCandidates (title, 3, 40.0f);
+
+    // Cap to 3 — UI shows exactly 3 rows
+    if ((int) candidates.size() > 3)
+        candidates.resize (3);
 
     // Refresh candidates listbox
     if (hCandList)
@@ -248,6 +252,8 @@ void TigerTandaPlugin::triggerBrowserSearch (const TgRecord& rec)
     searchTargetYear   = rec.year;
     smartSearchPending = true;
     smartSearchActiveToken = ++smartSearchToken;
+    smartSearchRetryCount = 0;
+    smartSearchNoResults = false;
 
     vdjSend ("browser_window 'songs'");
     vdjSend ("search \"" + toUtf8 (query) + "\"");
@@ -337,9 +343,37 @@ void TigerTandaPlugin::runSmartSearch()
     int totalItems = (int) vdjGetValue ("file_count");
     if (totalItems <= 0)
     {
-        // VDJ hasn't populated results yet — retry in 300ms (keep pending=true)
-        if (hDlg)
-            SetTimer (hDlg, TIMER_SMART_SEARCH, 300, nullptr);
+        // VDJ hasn't populated results yet — retry up to ~3 seconds total
+        // (10 attempts * 300ms). If we hit the cap, treat it as "no results"
+        // and unfreeze the UI.
+        const int kMaxRetries = 10;
+        if (smartSearchRetryCount < kMaxRetries)
+        {
+            ++smartSearchRetryCount;
+            if (hDlg)
+                SetTimer (hDlg, TIMER_SMART_SEARCH, 300, nullptr);
+            return;
+        }
+
+        // Timed out — no matches in VDJ library. Clear state, restore
+        // folder, and mark the browse list as "no results found" so the
+        // placeholder shows a helpful message.
+        browseItems.clear();
+        selectedBrowseIdx = -1;
+        smartSearchNoResults = true;
+        if (hBrowseList)
+            SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
+        syncBrowseListVisibility();
+
+        if (!savedBrowseFolder.empty())
+        {
+            vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
+            Sleep (20);
+        }
+        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+        smartSearchPending = false;
+        if (hDlg) InvalidateRect (hDlg, nullptr, FALSE);
         return;
     }
     // NOTE: Keep smartSearchPending=true through the entire body — we clear

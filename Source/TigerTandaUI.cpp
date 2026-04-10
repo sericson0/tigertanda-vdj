@@ -317,11 +317,14 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     MoveWindow (p->hBtnTabSettings, DLG_W - 26 - PAD - toggleW, topY, toggleW, TAB_BTN_H, FALSE);
     ShowWindow (p->hBtnTabSettings, SW_SHOW);
 
+    // Small gap between left and right panels (less than the outer PAD)
+    const int COL_GAP = 4;
+
     // Main view (activeTab == 0)
     if (showMain)
     {
         const int lx = PAD;
-        const int lw = leftW - PAD * 2;
+        const int lw = leftW - PAD - COL_GAP / 2;
         // Reserve scrollbar width on right so inputs/candidates align with scrolled results list items
         const int sbW = GetSystemMetrics (SM_CXVSCROLL);
         const int usableW = lw - sbW;
@@ -337,11 +340,10 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hEditYear,   lx + usableW - yearW,     ly, yearW,   EDIT_H, FALSE);
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
-        // Candidates list (scrollable, shows 2 rows at a time) — use full lw
-        // so its scrollbar eats sbW on the right, aligning item columns with
-        // the input row above it.
-        int candH = CAND_ITEM_H * 2 + 2;
-        MoveWindow (p->hCandList, lx, ly, lw, candH, FALSE);
+        // Candidates list — exactly 3 rows, no scrollbar. Width matches the
+        // input row (no scrollbar eating space on the right).
+        int candH = CAND_ITEM_H * 3 + 2;
+        MoveWindow (p->hCandList, lx, ly, usableW, candH, FALSE);
         ly += candH + 6;  // small gap before matches header
 
         // "MATCHES (N)" header painted, 14px
@@ -350,11 +352,11 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hResultsList, lx, matchListTop, lw, matchListBot - matchListTop, FALSE);
 
         // Right column
-        const int rx = leftW + PAD;
-        const int rw = rightW - PAD * 2;
+        const int rx = leftW + COL_GAP / 2;
+        const int rw = rightW - PAD - COL_GAP / 2;
 
-        // "SELECTED TRACK" header painted, 20px (18px text + 2px bottom gap)
-        int ry = TOP_H + PAD + 20;
+        // Detail box starts at the top of the right column (no header)
+        int ry = TOP_H + PAD;
 
         // Detail box position (painted in WM_PAINT, not a control)
         int detailBot = ry + DETAIL_BOX_H;
@@ -591,9 +593,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         for (int i = 0; i < 5; ++i)
             p->hBtnHowTabs[i] = mkBtn (IDC_BTN_HOW_TAB_0 + i, kHowNames[i]);
 
-        // Candidates list — scrollable, shows 2 rows at a time
+        // Candidates list — fixed 3 rows, no scrollbar
         p->hCandList = CreateWindowW (L"LISTBOX", nullptr,
-                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL
+                                      WS_CHILD | WS_VISIBLE
                                       | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
                                       | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
                                       0, 0, 10, 10, hwnd,
@@ -702,11 +704,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         // Main view
         if (p->activeTab == 0)
         {
+            const int COL_GAP = 4;
             const int leftW = DLG_W * LEFT_COL_PCT / 100;
             const int lx = PAD;
-            const int lw = leftW - PAD * 2;
-            const int rx = leftW + PAD;
-            const int rw = DLG_W - leftW - PAD * 2;
+            const int lw = leftW - PAD - COL_GAP / 2;
+            const int rx = leftW + COL_GAP / 2;
+            const int rw = DLG_W - leftW - PAD - COL_GAP / 2;
 
             // Left column headers — aligned with usable width (reserving scrollbar space)
             const int sbW = GetSystemMetrics (SM_CXVSCROLL);
@@ -724,20 +727,15 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             drawText (hdc, hyR, L"YEAR",   TCol::textDim, p->fontSmall, DT_CENTER | DT_TOP | DT_SINGLELINE);
 
             // "MATCHES (N)" header (no separator line above it)
-            int candBot = TOP_H + PAD + 14 + EDIT_H + TRACK_SEARCH_GAP + CAND_ITEM_H * 2 + 2;
+            int candBot = TOP_H + PAD + 14 + EDIT_H + TRACK_SEARCH_GAP + CAND_ITEM_H * 3 + 2;
             int matchHeaderY = candBot + 4;
             std::wstring matchLabel = L"MATCHES (" + std::to_wstring (p->results.size()) + L")";
             RECT mhR { lx, matchHeaderY, lx + lw, matchHeaderY + 12 };
             drawText (hdc, mhR, matchLabel, TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
 
-            // Right column: "SELECTED TRACK" header — larger, bolder
-            int rHeaderY = TOP_H + PAD;
-            RECT stR { rx, rHeaderY, rx + rw, rHeaderY + 18 };
-            drawText (hdc, stR, L"SELECTED TRACK", TCol::textNormal, p->fontBold,
-                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
-            // Detail box
-            int detailY = rHeaderY + 20;
+            // Detail box — no header label above it, the box's track title
+            // row is the header.
+            int detailY = TOP_H + PAD;
             RECT detR { rx, detailY, rx + rw, detailY + DETAIL_BOX_H };
             if (p->selectedResultIdx >= 0 && p->selectedResultIdx < (int) p->results.size())
                 drawResultDetailBox (hdc, detR, p->results[p->selectedResultIdx],
@@ -792,10 +790,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
                 const wchar_t* msg = p->smartSearchPending
                     ? L"Searching VDJ library\u2026"
-                    : (p->selectedResultIdx >= 0
-                       && p->selectedResultIdx < (int) p->results.size()
-                        ? L"Click FIND IN VDJ to search for this match"
-                        : L"Select a match, then click FIND IN VDJ");
+                    : (p->smartSearchNoResults
+                        ? L"No matches found in VDJ library"
+                        : (p->selectedResultIdx >= 0
+                           && p->selectedResultIdx < (int) p->results.size()
+                            ? L"Click FIND IN VDJ to search for this match"
+                            : L"Select a match, then click FIND IN VDJ"));
                 drawText (hdc, placeholder, msg, TCol::textDim, p->fontSmall,
                           DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             }
@@ -1137,6 +1137,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 // Bump the smart-search token so any in-flight runSmartSearch
                 // will discard its results when it reaches the token check.
                 p->smartSearchActiveToken = ++p->smartSearchToken;
+                p->smartSearchNoResults = false;
 
                 // Clear stale browse results from the previous match.
                 if (!p->browseItems.empty())
@@ -1180,8 +1181,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (p->hChkTrack) InvalidateRect (p->hChkTrack, nullptr, FALSE);
             p->saveSettings(); if (p->confirmedIdx >= 0) p->runTandaSearch(); break;
 
-        // Prelisten toggle
+        // Prelisten toggle — ignore click if no browse result selected
         case IDC_BTN_PRELISTEN:
+            if (p->selectedBrowseIdx < 0
+                || p->selectedBrowseIdx >= (int) p->browseItems.size())
+                break;
             p->prelistenActive = !p->prelistenActive;
             p->vdjSend (p->prelistenActive ? "prelisten" : "prelisten_stop");
             if (p->prelistenActive)
@@ -1210,6 +1214,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 {
                     p->selectedBrowseIdx = sel;
                     InvalidateRect (p->hBrowseList, nullptr, FALSE);
+                    // Repaint ADD/prelisten so their enabled state updates.
+                    if (p->hBtnAddEnd)    InvalidateRect (p->hBtnAddEnd,    nullptr, FALSE);
+                    if (p->hBtnPrelisten) InvalidateRect (p->hBtnPrelisten, nullptr, FALSE);
 
                     // Update local prelisten waveform if path available
                     const BrowseItem& bi = p->browseItems[sel];
@@ -1358,11 +1365,18 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 return TRUE;
             }
 
-            // Prelisten play/pause button
+            // Prelisten play/pause button — dimmed when no browse result selected
             if (di->CtlID == IDC_BTN_PRELISTEN)
             {
-                COLORREF bg  = p->prelistenActive ? TCol::accent    : TCol::buttonBg;
-                COLORREF fg  = p->prelistenActive ? TCol::textBright : TCol::accentBrt;
+                bool hasSel = (p->selectedBrowseIdx >= 0
+                               && p->selectedBrowseIdx < (int) p->browseItems.size());
+                COLORREF bg, fg;
+                if (!hasSel)
+                { bg = RGB (24, 28, 42); fg = TCol::textDim; }
+                else if (p->prelistenActive)
+                { bg = TCol::accent;     fg = TCol::textBright; }
+                else
+                { bg = TCol::buttonBg;   fg = TCol::accentBrt; }
                 wchar_t txt[4] = {};
                 GetWindowTextW (di->hwndItem, txt, 4);
                 drawOwnerButton (di, txt, bg, fg, p->fontNormal, p->hoveredBtn == di->hwndItem);
@@ -1417,7 +1431,15 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 bg = btnHovered ? RGB (200, 45, 45) : RGB (70, 28, 28);
                 fg = TCol::textBright;
             }
-            else if (di->CtlID == IDC_BTN_ADD_END)       { bg = RGB (28, 55, 28);  fg = TCol::textBright; }
+            else if (di->CtlID == IDC_BTN_ADD_END)
+            {
+                bool hasSel = (p->selectedBrowseIdx >= 0
+                               && p->selectedBrowseIdx < (int) p->browseItems.size());
+                if (hasSel)
+                { bg = RGB (28, 55, 28); fg = TCol::textBright; }
+                else
+                { bg = RGB (24, 28, 42); fg = TCol::textDim;    }
+            }
             else if (di->CtlID == IDC_BTN_FIND_IN_VDJ)
             {
                 bool hasSel = (p->selectedResultIdx >= 0
@@ -1485,13 +1507,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            // Title, artist, year — all use fontSmall for uniform row density.
-            // Confirmed candidate uses a bold variant on the title for emphasis.
-            drawText (hdc, titleR,  rec.title,         titleCol, confirmed ? p->fontSmallBold : p->fontSmall,
+            // Title, artist, year — all use fontNormal (same size as the
+            // input boxes above). Confirmed candidate uses the bold variant
+            // on the title for emphasis.
+            drawText (hdc, titleR,  rec.title,         titleCol, confirmed ? p->fontBold : p->fontNormal,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, formatArtist (rec), otherCol, p->fontSmall,
+            drawText (hdc, artistR, formatArtist (rec), otherCol, p->fontNormal,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, yearR,   rec.year,           otherCol, p->fontSmall,
+            drawText (hdc, yearR,   rec.year,           otherCol, p->fontNormal,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
@@ -1528,16 +1551,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            // All three columns use fontSmall for a clean, uniform row density
-            drawText (hdc, titleR,  rec.title,         TCol::textBright, p->fontSmallBold,
+            // All three columns use fontNormal (same size as the input boxes)
+            drawText (hdc, titleR,  rec.title,         TCol::textBright, p->fontBold,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, formatArtist (rec), TCol::textDim,    p->fontSmall,
+            drawText (hdc, artistR, formatArtist (rec), TCol::textDim,    p->fontNormal,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
             std::wstring yearStr = rec.year.empty()
                 ? (rec.date.size() >= 4 ? rec.date.substr (0, 4) : rec.date)
                 : rec.year;
-            drawText (hdc, yearR,   yearStr,            TCol::textDim,    p->fontSmall,
+            drawText (hdc, yearR,   yearStr,            TCol::textDim,    p->fontNormal,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
