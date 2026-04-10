@@ -181,15 +181,23 @@ void TigerTandaPlugin::runTandaSearch()
             SendMessageW (hResultsList, LB_ADDSTRING, 0, (LPARAM) L"");
     }
 
-    // Auto-select first match and trigger VDJ browse search
+    // Auto-select first match visually. Do NOT touch VDJ — the user must
+    // explicitly click "Find in VDJ" to trigger a browser search. This is
+    // the core of the Option A workflow: passive observer (polling) and
+    // active controller (VDJ commands) never run in the same cycle.
     if (!results.empty())
     {
         selectedResultIdx = 0;
         if (hResultsList)
             SendMessageW (hResultsList, LB_SETCURSEL, 0, 0);
-
-        triggerBrowserSearch (results[0]);
     }
+
+    // Clear any stale browse results — they belong to a previous match.
+    browseItems.clear();
+    selectedBrowseIdx = -1;
+    if (hBrowseList)
+        SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
+    syncBrowseListVisibility();
 
     // Force redraw
     if (hDlg)
@@ -203,6 +211,16 @@ void TigerTandaPlugin::runTandaSearch()
 //  runSmartSearch, then issues the VDJ search command and schedules the
 //  timer that will read results 500ms later.
 // ─────────────────────────────────────────────────────────────────────────────
+
+void TigerTandaPlugin::syncBrowseListVisibility()
+{
+    if (!hBrowseList) return;
+    bool mainView = (activeTab == 0);
+    bool shouldShow = mainView && !browseItems.empty();
+    ShowWindow (hBrowseList, shouldShow ? SW_SHOW : SW_HIDE);
+    if (hDlg && mainView)
+        InvalidateRect (hDlg, nullptr, FALSE);
+}
 
 void TigerTandaPlugin::triggerBrowserSearch (const TgRecord& rec)
 {
@@ -233,9 +251,15 @@ void TigerTandaPlugin::triggerBrowserSearch (const TgRecord& rec)
     searchTargetArtist = rec.bandleader;
     searchTargetYear   = rec.year;
     smartSearchPending = true;
+    smartSearchActiveToken = ++smartSearchToken;
 
     vdjSend ("browser_window 'songs'");
     vdjSend ("search \"" + toUtf8 (query) + "\"");
+
+    // Repaint so the placeholder in the empty browse area updates to
+    // "Searching VDJ...". Also repaint the FIND IN VDJ button so its
+    // pending state is visible.
+    if (hDlg) InvalidateRect (hDlg, nullptr, FALSE);
 
     if (hDlg)
         SetTimer (hDlg, TIMER_SMART_SEARCH, 500, nullptr);
@@ -308,6 +332,11 @@ void TigerTandaPlugin::addSelectedBrowseToAutomix()
 
 void TigerTandaPlugin::runSmartSearch()
 {
+    // Snapshot the token so we can detect if the user canceled this search
+    // (by clicking a different match) while our Sleep-driven browser
+    // enumeration is running below.
+    int myToken = smartSearchActiveToken;
+
     // Use file_count (the correct VDJ API — browser_count does not exist)
     int totalItems = (int) vdjGetValue ("file_count");
     if (totalItems <= 0)
@@ -419,28 +448,37 @@ void TigerTandaPlugin::runSmartSearch()
         return a.compositeScore > b.compositeScore;
     });
 
-    // Keep top 4
+    // Token check: if the user clicked a different match or reset while we
+    // were enumerating, smartSearchActiveToken will have changed. Discard
+    // our scored results in that case — they belong to a stale target.
+    bool stale = (myToken != smartSearchActiveToken);
+
+    // Keep top 4 (unless stale)
     browseItems.clear();
     selectedBrowseIdx = -1;
-    int keep = (int) scored.size() < 4 ? (int) scored.size() : 4;
-    for (int i = 0; i < keep; ++i)
-        browseItems.push_back (scored[i].item);
+    if (!stale)
+    {
+        int keep = (int) scored.size() < 4 ? (int) scored.size() : 4;
+        for (int i = 0; i < keep; ++i)
+            browseItems.push_back (scored[i].item);
 
-    // Eagerly extract cover art so first paint is already cached
-    for (const auto& bi : browseItems)
-        if (!bi.filePath.empty())
-            CoverArt::getForPath (bi.filePath);
+        // Eagerly extract cover art so first paint is already cached
+        for (const auto& bi : browseItems)
+            if (!bi.filePath.empty())
+                CoverArt::getForPath (bi.filePath);
+    }
 
     // Update cached count so normal polling doesn't immediately overwrite
     browseListCount = totalItems;
 
-    // Populate browse listbox
+    // Populate browse listbox (empty if stale)
     if (hBrowseList)
     {
         SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
         for (int i = 0; i < (int) browseItems.size(); ++i)
             SendMessageW (hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
     }
+    syncBrowseListVisibility();
 
     // Return VDJ's browser to the user's saved folder. Prefer the explicit
     // savedBrowseFolder path (set by triggerBrowserSearch) over the less
@@ -489,9 +527,13 @@ void TigerTandaPlugin::resetAll()
 
     if (hCandList)    SendMessageW (hCandList,    LB_RESETCONTENT, 0, 0);
     if (hResultsList) SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
+    if (hBrowseList)  SendMessageW (hBrowseList,  LB_RESETCONTENT, 0, 0);
     if (hEditTitle)   SetWindowTextW (hEditTitle,  L"");
     if (hEditArtist)  SetWindowTextW (hEditArtist, L"");
     if (hEditYear)    SetWindowTextW (hEditYear,   L"");
+
+    browseItems.clear();
+    syncBrowseListVisibility();
 
     if (hDlg) InvalidateRect (hDlg, nullptr, FALSE);
 }

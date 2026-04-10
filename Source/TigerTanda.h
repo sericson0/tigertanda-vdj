@@ -48,6 +48,7 @@ enum CtrlId
     IDC_BROWSE_LIST        = 2901,
     IDC_BTN_PRELISTEN      = 2902,
     IDC_BTN_ADD_END        = 2903,
+    IDC_BTN_FIND_IN_VDJ    = 2904,  // "Find in VDJ" — triggers browser search for selected match
 
     // Settings: "How it works" sub-tabs
     IDC_BTN_HOW_TAB_0      = 2501,  // Overview
@@ -146,6 +147,9 @@ public:
     // ADD button — re-issues the last search, scrolls to the selected
     // browseItem's stored browserIndex, sends playlist_add, restores folder.
     void addSelectedBrowseToAutomix();
+    // Toggle the browse listbox visibility based on browseItems.empty().
+    // When empty, the main window paints a placeholder in its place.
+    void syncBrowseListVisibility();
 
     // Settings (TigerTanda.cpp)
     void loadSettings();
@@ -202,6 +206,11 @@ public:
     // Remember last search target so we don't re-fire on redundant requests
     std::wstring lastSmartSearchTitle;
     std::wstring lastSmartSearchArtist;
+    // Monotonically increasing token — runSmartSearch checks that the token
+    // it was fired for is still current before applying its results, so a
+    // user clicking a different match mid-flight cancels stale results.
+    int smartSearchToken = 0;
+    int smartSearchActiveToken = 0;
     // Folder path saved at start of a search cycle; restored when done
     std::wstring savedBrowseFolder;
     // Raw VDJ search query string used to populate the current browseItems.
@@ -240,6 +249,7 @@ public:
     HWND hBrowseList       = nullptr;
     HWND hBtnPrelisten     = nullptr;
     HWND hBtnAddEnd        = nullptr;
+    HWND hBtnFindInVdj     = nullptr;
     HWND hBtnYearToggle    = nullptr;
     HWND hBtnYearRange     = nullptr;
     HWND hBtnHowTabs[5]    = {};
