@@ -971,19 +971,37 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
 
         // ── Poll song from browser ────────────────────────────────────────────
-        std::wstring newTitle  = p->vdjGetString ("get_browsed_song 'title'");
-        std::wstring newArtist = p->vdjGetString ("get_browsed_song 'artist'");
-        std::wstring newYear   = p->vdjGetString ("get_browsed_song 'year'");
-
-        if (!newTitle.empty()
-            && (newTitle != p->lastSeenTitle || newArtist != p->lastSeenArtist))
+        // Only react to VDJ browse changes when the user is actually browsing
+        // a real folder. When curFolder is empty, VDJ is showing search results
+        // — likely results we triggered ourselves via smart search — and
+        // reading get_browsed_song would cause an identify loop:
+        //   browse → auto-confirm → auto-select match → vdjSend("search") →
+        //   VDJ parks on a search hit → polling reads that hit as "new song" →
+        //   re-identify → search again → ...
+        // Gate on curFolder + smartSearchPending to break the cycle.
+        std::wstring pollFolder = p->vdjGetString ("get_browsed_folder_path");
+        if (!pollFolder.empty() && !p->smartSearchPending)
         {
-            p->lastSeenTitle  = newTitle;
-            p->lastSeenArtist = newArtist;
-            if (p->hEditTitle)  SetWindowTextW (p->hEditTitle,  newTitle.c_str());
-            if (p->hEditArtist) SetWindowTextW (p->hEditArtist, newArtist.c_str());
-            if (p->hEditYear)   SetWindowTextW (p->hEditYear,   newYear.c_str());
-            p->runIdentification (newTitle, newArtist);
+            std::wstring newTitle  = p->vdjGetString ("get_browsed_song 'title'");
+            std::wstring newArtist = p->vdjGetString ("get_browsed_song 'artist'");
+            std::wstring newYear   = p->vdjGetString ("get_browsed_song 'year'");
+
+            if (!newTitle.empty()
+                && (newTitle != p->lastSeenTitle || newArtist != p->lastSeenArtist))
+            {
+                p->lastSeenTitle  = newTitle;
+                p->lastSeenArtist = newArtist;
+
+                // Suppress EN_CHANGE during programmatic text updates so the
+                // debounce timer doesn't fire a duplicate identification.
+                p->suppressEditChange = true;
+                if (p->hEditTitle)  SetWindowTextW (p->hEditTitle,  newTitle.c_str());
+                if (p->hEditArtist) SetWindowTextW (p->hEditArtist, newArtist.c_str());
+                if (p->hEditYear)   SetWindowTextW (p->hEditYear,   newYear.c_str());
+                p->suppressEditChange = false;
+
+                p->runIdentification (newTitle, newArtist);
+            }
         }
 
         // ── Poll prelisten filepath for waveform ──────────────────────────────
@@ -1083,7 +1101,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case IDC_EDIT_TITLE:
         case IDC_EDIT_ARTIST:
         case IDC_EDIT_YEAR:
-            if (notifCode == EN_CHANGE)
+            // Ignore programmatic updates from polling — only debounce real
+            // keystrokes. Without this, every polling-driven SetWindowTextW
+            // would schedule a duplicate runIdentification 300ms later.
+            if (notifCode == EN_CHANGE && !p->suppressEditChange)
                 SetTimer (hwnd, TIMER_SEARCH_DEBOUNCE, 300, nullptr);
             break;
 

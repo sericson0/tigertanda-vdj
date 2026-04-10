@@ -245,6 +245,7 @@ public:
 
     bool dialogRequestedOpen  = true;
     bool suppressNextHideSync = false;
+    bool suppressEditChange   = false;  // true while polling updates edit boxes
 };
 
 // Window procedure (TigerTandaUI.cpp)
