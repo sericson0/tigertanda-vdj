@@ -116,6 +116,31 @@ static void drawTextToggle (const DRAWITEMSTRUCT* di, const std::wstring& label,
     DeleteObject (pen);
 }
 
+// Extract the last whitespace-separated token from a name
+// "Pedro Laurenz" -> "Laurenz", "Héctor Farrel" -> "Farrel"
+static std::wstring lastName (const std::wstring& fullName)
+{
+    if (fullName.empty()) return fullName;
+    size_t pos = fullName.find_last_of (L" \t");
+    return (pos == std::wstring::npos) ? fullName : fullName.substr (pos + 1);
+}
+
+// Format artist for list rows: "BandleaderLast - SingerLast" (or just bandleader last if no singer)
+static std::wstring formatArtist (const TgRecord& rec)
+{
+    std::wstring out = lastName (rec.bandleader);
+    if (!rec.singer.empty())
+    {
+        std::wstring s = lastName (rec.singer);
+        if (!s.empty())
+        {
+            if (!out.empty()) out += L" - ";
+            out += s;
+        }
+    }
+    return out;
+}
+
 // Format raw date (M/D/YYYY or YYYY-M-D) to YYYY-mm-dd
 static std::wstring formatDateYMD (const std::wstring& raw)
 {
@@ -290,24 +315,28 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     {
         const int lx = PAD;
         const int lw = leftW - PAD * 2;
+        // Reserve scrollbar width on right so inputs/candidates align with scrolled results list items
+        const int sbW = GetSystemMetrics (SM_CXVSCROLL);
+        const int usableW = lw - sbW;
 
         // Search inputs — below column headers (headers are painted, 14px)
         int ly = TOP_H + PAD + 14;
         const int gap = 4;
         const int yearW = 52;
-        const int titleW = (lw - yearW - gap * 2) * 55 / 100;
-        const int artistW = lw - titleW - yearW - gap * 2;
+        const int titleW = (usableW - yearW - gap * 2) * 55 / 100;
+        const int artistW = usableW - titleW - yearW - gap * 2;
         MoveWindow (p->hEditTitle,  lx,                       ly, titleW,  EDIT_H, FALSE);
         MoveWindow (p->hEditArtist, lx + titleW + gap,        ly, artistW, EDIT_H, FALSE);
-        MoveWindow (p->hEditYear,   lx + lw - yearW,          ly, yearW,   EDIT_H, FALSE);
+        MoveWindow (p->hEditYear,   lx + usableW - yearW,     ly, yearW,   EDIT_H, FALSE);
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
-        // Candidates list (2 items max)
+        // Candidates list (2 items max, no scrollbar — width matches input row)
         int candH = CAND_ITEM_H * 2 + 2;
-        MoveWindow (p->hCandList, lx, ly, lw, candH, FALSE);
+        MoveWindow (p->hCandList, lx, ly, usableW, candH, FALSE);
         ly += candH + 8;  // 8px gap for separator
 
         // "MATCHES (N)" header painted, 14px
+        // Results list uses full lw; its scrollbar eats sbW on the right, aligning items with inputs/candidates
         int matchListTop = ly + 14;
         int matchListBot = DLG_H - PAD;
         MoveWindow (p->hResultsList, lx, matchListTop, lw, matchListBot - matchListTop, FALSE);
@@ -541,9 +570,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         for (int i = 0; i < 5; ++i)
             p->hBtnHowTabs[i] = mkBtn (IDC_BTN_HOW_TAB_0 + i, kHowNames[i]);
 
-        // Candidates list
+        // Candidates list (max 2 items, no scrollbar)
         p->hCandList = CreateWindowW (L"LISTBOX", nullptr,
-                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL
+                                      WS_CHILD | WS_VISIBLE
                                       | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
                                       | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
                                       0, 0, 10, 10, hwnd,
@@ -656,15 +685,17 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             const int rx = leftW + PAD;
             const int rw = DLG_W - leftW - PAD * 2;
 
-            // Left column headers
+            // Left column headers — aligned with usable width (reserving scrollbar space)
+            const int sbW = GetSystemMetrics (SM_CXVSCROLL);
+            const int usableW = lw - sbW;
             int headerY = TOP_H + PAD;
             const int gap = 4;
             const int yearW = 52;
-            const int titleW = (lw - yearW - gap * 2) * 55 / 100;
-            const int artistW = lw - titleW - yearW - gap * 2;
+            const int titleW = (usableW - yearW - gap * 2) * 55 / 100;
+            const int artistW = usableW - titleW - yearW - gap * 2;
             RECT htR { lx, headerY, lx + titleW, headerY + 12 };
             RECT haR { lx + titleW + gap, headerY, lx + titleW + gap + artistW, headerY + 12 };
-            RECT hyR { lx + lw - yearW, headerY, lx + lw, headerY + 12 };
+            RECT hyR { lx + usableW - yearW, headerY, lx + usableW, headerY + 12 };
             drawText (hdc, htR, L"TITLE",  TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
             drawText (hdc, haR, L"ARTIST", TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
             drawText (hdc, hyR, L"YEAR",   TCol::textDim, p->fontSmall, DT_CENTER | DT_TOP | DT_SINGLELINE);
@@ -977,6 +1008,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 p->browseListCount  = newCount;
                 p->lastBrowseFolder = curFolder;
                 p->browseItems.clear();
+                p->selectedBrowseIdx = -1;
 
                 // Only enumerate when VDJ is showing a real folder (not search results).
                 // When curFolder is empty (search results), leave browseItems alone so
@@ -1145,6 +1177,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 int sel = (int) SendMessageW (p->hBrowseList, LB_GETCURSEL, 0, 0);
                 if (sel >= 0 && sel < (int) p->browseItems.size())
                 {
+                    p->selectedBrowseIdx = sel;
+                    InvalidateRect (p->hBrowseList, nullptr, FALSE);
+
                     const BrowseItem& bi = p->browseItems[sel];
 
                     // Use browserIndex for smart search results, otherwise listbox index
@@ -1364,10 +1399,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             HDC  hdc = di->hDC;
             RECT r   = di->rcItem;
-            bool sel       = (di->itemState & ODS_SELECTED) != 0;
+            // Draw based on confirmedIdx only — ignore transient ODS_SELECTED so
+            // selection persists when focus moves to another listbox.
             bool confirmed = ((int) di->itemID == p->confirmedIdx);
 
-            fillRect (hdc, r, (sel || confirmed) ? TCol::matchSel : TCol::panel);
+            fillRect (hdc, r, confirmed ? TCol::matchSel : TCol::panel);
 
             if (confirmed)
             {
@@ -1389,11 +1425,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            drawText (hdc, titleR,  rec.title,      titleCol, confirmed ? p->fontBold : p->fontNormal,
+            drawText (hdc, titleR,  rec.title,         titleCol, confirmed ? p->fontBold : p->fontNormal,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, rec.bandleader,  otherCol, p->fontSmall,
+            drawText (hdc, artistR, formatArtist (rec), otherCol, p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, yearR,   rec.year,        otherCol, p->fontSmall,
+            drawText (hdc, yearR,   rec.year,           otherCol, p->fontSmall,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
@@ -1413,7 +1449,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             HDC  hdc  = di->hDC;
             RECT r    = di->rcItem;
-            bool sel  = (di->itemState & ODS_SELECTED) != 0;
+            // Draw based on selectedResultIdx — persists across focus changes
+            bool sel  = ((int) di->itemID == p->selectedResultIdx);
             bool even = (di->itemID % 2 == 0);
 
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
@@ -1429,15 +1466,15 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            drawText (hdc, titleR,  rec.title,      TCol::textBright, p->fontBold,
+            drawText (hdc, titleR,  rec.title,         TCol::textBright, p->fontBold,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, artistR, rec.bandleader,  TCol::textDim,    p->fontSmall,
+            drawText (hdc, artistR, formatArtist (rec), TCol::textDim,    p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
             std::wstring yearStr = rec.year.empty()
                 ? (rec.date.size() >= 4 ? rec.date.substr (0, 4) : rec.date)
                 : rec.year;
-            drawText (hdc, yearR,   yearStr,         TCol::textDim,    p->fontSmall,
+            drawText (hdc, yearR,   yearStr,            TCol::textDim,    p->fontSmall,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
@@ -1457,7 +1494,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             HDC  hdc  = di->hDC;
             RECT r    = di->rcItem;
-            bool sel  = (di->itemState & ODS_SELECTED) != 0;
+            // Draw based on selectedBrowseIdx — persists across focus changes
+            bool sel  = ((int) di->itemID == p->selectedBrowseIdx);
             bool even = (di->itemID % 2 == 0);
 
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);

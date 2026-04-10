@@ -65,11 +65,15 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
 
     // Use artist-aware search when artist is available
     if (!artist.empty())
-        candidates = matcher.findCandidatesForArtist (title, artist, 5, 40.0f);
+        candidates = matcher.findCandidatesForArtist (title, artist, 2, 40.0f);
 
     // Fallback: title-only search
     if (candidates.empty())
-        candidates = matcher.findCandidates (title, 5, 40.0f);
+        candidates = matcher.findCandidates (title, 2, 40.0f);
+
+    // Cap to 2 candidates (UI shows 2 rows)
+    if ((int) candidates.size() > 2)
+        candidates.resize (2);
 
     // Refresh candidates listbox
     if (hCandList)
@@ -81,6 +85,10 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
             SendMessageW (hCandList, LB_ADDSTRING, 0, (LPARAM) L"");
         }
     }
+
+    // Auto-confirm the first (best) candidate so matches populate immediately
+    if (!candidates.empty())
+        confirmCandidate (0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +116,7 @@ void TigerTandaPlugin::runTandaSearch()
 {
     results.clear();
     selectedResultIdx = -1;
+    selectedBrowseIdx = -1;
 
     if (confirmedIdx < 0 || confirmedIdx >= (int) candidates.size())
     {
@@ -169,6 +178,30 @@ void TigerTandaPlugin::runTandaSearch()
         SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
         for (int i = 0; i < (int) results.size(); ++i)
             SendMessageW (hResultsList, LB_ADDSTRING, 0, (LPARAM) L"");
+    }
+
+    // Auto-select first match and trigger VDJ browse search
+    if (!results.empty())
+    {
+        selectedResultIdx = 0;
+        if (hResultsList)
+            SendMessageW (hResultsList, LB_SETCURSEL, 0, 0);
+
+        const TgRecord& rec = results[0];
+        std::wstring query = normalizeForSearch (rec.title);
+        if (!rec.bandleader.empty())
+            query += L" " + normalizeForSearch (rec.bandleader);
+
+        vdjSend ("browser_window 'songs'");
+        vdjSend ("search \"" + toUtf8 (query) + "\"");
+
+        searchTargetTitle  = rec.title;
+        searchTargetArtist = rec.bandleader;
+        searchTargetYear   = rec.year;
+        smartSearchPending = true;
+
+        if (hDlg)
+            SetTimer (hDlg, TIMER_SMART_SEARCH, 500, nullptr);
     }
 
     // Force redraw
@@ -293,6 +326,7 @@ void TigerTandaPlugin::runSmartSearch()
 
     // Keep top 5
     browseItems.clear();
+    selectedBrowseIdx = -1;
     int keep = (int) scored.size() < 5 ? (int) scored.size() : 5;
     for (int i = 0; i < keep; ++i)
         browseItems.push_back (scored[i].item);
@@ -333,6 +367,7 @@ void TigerTandaPlugin::resetAll()
     confirmedIdx = -1;
     results.clear();
     selectedResultIdx = -1;
+    selectedBrowseIdx = -1;
     lastSeenTitle.clear();
     lastSeenArtist.clear();
 

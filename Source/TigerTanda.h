@@ -160,6 +160,7 @@ public:
     // ── Phase 2: Tanda search ────────────────────────────────────────────────
     std::vector<TgRecord>    results;
     int                      selectedResultIdx = -1;
+    int                      selectedBrowseIdx = -1;
 
     // ── Filters ─────────────────────────────────────────────────────────────
     bool filterSameArtist    = true;
