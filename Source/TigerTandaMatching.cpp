@@ -189,20 +189,33 @@ void TigerTandaPlugin::runTandaSearch()
             SendMessageW (hResultsList, LB_SETCURSEL, 0, 0);
 
         const TgRecord& rec = results[0];
-        std::wstring query = normalizeForSearch (rec.title);
-        if (!rec.bandleader.empty())
-            query += L" " + normalizeForSearch (rec.bandleader);
 
-        vdjSend ("browser_window 'songs'");
-        vdjSend ("search \"" + toUtf8 (query) + "\"");
+        // Skip the search entirely if we already searched for this exact
+        // target recently — this kills the re-entry cycle where polling
+        // re-fires identification whose top match is the same song.
+        bool sameTarget = (rec.title == lastSmartSearchTitle
+                        && rec.bandleader == lastSmartSearchArtist);
 
-        searchTargetTitle  = rec.title;
-        searchTargetArtist = rec.bandleader;
-        searchTargetYear   = rec.year;
-        smartSearchPending = true;
+        if (!sameTarget)
+        {
+            lastSmartSearchTitle  = rec.title;
+            lastSmartSearchArtist = rec.bandleader;
 
-        if (hDlg)
-            SetTimer (hDlg, TIMER_SMART_SEARCH, 500, nullptr);
+            std::wstring query = normalizeForSearch (rec.title);
+            if (!rec.bandleader.empty())
+                query += L" " + normalizeForSearch (rec.bandleader);
+
+            vdjSend ("browser_window 'songs'");
+            vdjSend ("search \"" + toUtf8 (query) + "\"");
+
+            searchTargetTitle  = rec.title;
+            searchTargetArtist = rec.bandleader;
+            searchTargetYear   = rec.year;
+            smartSearchPending = true;
+
+            if (hDlg)
+                SetTimer (hDlg, TIMER_SMART_SEARCH, 500, nullptr);
+        }
     }
 
     // Force redraw
@@ -225,8 +238,10 @@ void TigerTandaPlugin::runSmartSearch()
             SetTimer (hDlg, TIMER_SMART_SEARCH, 300, nullptr);
         return;
     }
-
-    smartSearchPending = false;
+    // NOTE: Keep smartSearchPending=true through the entire body — we clear
+    // it at the very end after goto_last_folder + lastSeen* refresh. That
+    // guarantees any WM_TIMER tick racing with our in-progress browser
+    // manipulation will skip polling.
 
     const int limit = totalItems < 50 ? totalItems : 50;
     int targetYear = parseYear (searchTargetYear);
@@ -348,15 +363,20 @@ void TigerTandaPlugin::runSmartSearch()
             SendMessageW (hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
     }
 
-    // Auto-scroll VDJ browser to #1 ranked result
-    if (!browseItems.empty())
-    {
-        vdjSend ("browser_scroll 'top'");
-        Sleep (20);
-        int topIdx = browseItems[0].browserIndex;
-        if (topIdx > 0)
-            vdjSend ("browser_scroll +" + std::to_string (topIdx));
-    }
+    // Return VDJ's browser to the user's previous folder. Our own browseList
+    // control shows the ranked results, so there's no need to leave VDJ
+    // parked on a search-results view.
+    vdjSend ("goto_last_folder");
+    Sleep (20);
+
+    // After goto_last_folder, VDJ's browse cursor may have landed on a
+    // different song than the one the user was on. Refresh lastSeen* to
+    // whatever is under VDJ's cursor now, so the next polling tick doesn't
+    // treat it as a "new song" and kick off another identify → search cycle.
+    lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+    lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+
+    smartSearchPending = false;
 
     // Force redraw
     if (hDlg)
@@ -376,6 +396,8 @@ void TigerTandaPlugin::resetAll()
     selectedBrowseIdx = -1;
     lastSeenTitle.clear();
     lastSeenArtist.clear();
+    lastSmartSearchTitle.clear();
+    lastSmartSearchArtist.clear();
 
     if (hCandList)    SendMessageW (hCandList,    LB_RESETCONTENT, 0, 0);
     if (hResultsList) SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);

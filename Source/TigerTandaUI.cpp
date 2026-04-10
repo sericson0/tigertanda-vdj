@@ -970,6 +970,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             ShowWindow (hwnd, SW_HIDE);
         }
 
+        // When the dialog is closed (or hidden), do no more work. No polling,
+        // no identification, no VDJ commands. This prevents the plugin from
+        // disturbing the user's browser after they've closed the GUI.
+        if (!p->dialogRequestedOpen || !IsWindowVisible (hwnd))
+            return 0;
+
         // ── Poll song from browser ────────────────────────────────────────────
         // Only react to VDJ browse changes when the user is actually browsing
         // a real folder. When curFolder is empty, VDJ is showing search results
@@ -1192,7 +1198,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             InvalidateRect (hwnd, &p->prelistenWaveRect, FALSE);
             break;
 
-        // Browse list: clicking a row moves VDJ browser focus to that item
+        // Browse list: clicking a row only updates prelisten + selection highlight.
+        // We intentionally do NOT move VDJ's browser — the user's cursor stays
+        // on whatever song they were originally on. If they want to actually
+        // load one of the browse results, that's what the ADD button is for
+        // (and we could extend this later to send a "browse to file" command
+        // if VDJ exposes one).
         case IDC_BROWSE_LIST:
             if (notifCode == LBN_SELCHANGE || notifCode == LBN_DBLCLK)
             {
@@ -1202,16 +1213,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     p->selectedBrowseIdx = sel;
                     InvalidateRect (p->hBrowseList, nullptr, FALSE);
 
-                    const BrowseItem& bi = p->browseItems[sel];
-
-                    // Use browserIndex for smart search results, otherwise listbox index
-                    int vdjIdx = (bi.browserIndex >= 0) ? bi.browserIndex : sel;
-                    p->vdjSend ("browser_scroll 'top'");
-                    Sleep (20);
-                    if (vdjIdx > 0)
-                        p->vdjSend ("browser_scroll +" + std::to_string (vdjIdx));
-
                     // Update local prelisten waveform if path available
+                    const BrowseItem& bi = p->browseItems[sel];
                     if (!bi.filePath.empty())
                     {
                         rebuildPrelistenWaveBins (p->prelistenWaveBins, bi.filePath);

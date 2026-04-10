@@ -192,6 +192,9 @@ public:
     std::wstring searchTargetArtist;
     std::wstring searchTargetYear;
     bool         smartSearchPending = false;
+    // Remember last search target so we don't re-fire on redundant requests
+    std::wstring lastSmartSearchTitle;
+    std::wstring lastSmartSearchArtist;
 
     // ── Prelisten ────────────────────────────────────────────────────────────
     bool              prelistenActive    = false;
