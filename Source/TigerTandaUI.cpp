@@ -907,6 +907,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (wParam == TIMER_SEARCH_DEBOUNCE)
         {
             KillTimer (hwnd, TIMER_SEARCH_DEBOUNCE);
+            // If a browser search is in flight, postpone — running
+            // identification now would clobber smart-search state mid-cycle.
+            if (p->smartSearchPending)
+            {
+                SetTimer (hwnd, TIMER_SEARCH_DEBOUNCE, 200, nullptr);
+                return 0;
+            }
             wchar_t title[512] = {}, artist[512] = {};
             GetWindowTextW (p->hEditTitle,  title,  512);
             GetWindowTextW (p->hEditArtist, artist, 512);
@@ -1129,26 +1136,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (notifCode == LBN_SELCHANGE)
             {
                 int sel = (int) SendMessageW (p->hResultsList, LB_GETCURSEL, 0, 0);
+                // Update visual highlight immediately — don't let the VDJ
+                // search cycle delay the user's feedback.
                 p->selectedResultIdx = sel;
-                InvalidateRect (hwnd, nullptr, FALSE);
+                if (p->hResultsList) InvalidateRect (p->hResultsList, nullptr, FALSE);
+                if (p->hDlg)         InvalidateRect (p->hDlg,         nullptr, FALSE);
 
                 if (sel >= 0 && sel < (int) p->results.size())
-                {
-                    const TgRecord& rec = p->results[sel];
-                    std::wstring query = normalizeForSearch (rec.title);
-                    if (!rec.bandleader.empty()) query += L" " + normalizeForSearch (rec.bandleader);
-                    std::string cmd = "search \"" + toUtf8 (query) + "\"";
-
-                    p->vdjSend ("browser_window 'songs'");
-                    p->vdjSend (cmd);
-
-                    p->searchTargetTitle  = rec.title;
-                    p->searchTargetArtist = rec.bandleader;
-                    p->searchTargetYear   = rec.year;
-                    p->smartSearchPending = true;
-
-                    SetTimer (hwnd, TIMER_SMART_SEARCH, 500, nullptr);
-                }
+                    p->triggerBrowserSearch (p->results[sel]);
             }
             break;
 
@@ -1226,9 +1221,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             }
             break;
 
-        // Browse: Add to end of playlist
+        // Browse: add the selected browse result to the automix bottom.
+        // Re-issues the last browser search, scrolls to the saved index,
+        // sends playlist_add, then restores the user's folder.
         case IDC_BTN_ADD_END:
-            p->vdjSend ("playlist_add");
+            p->addSelectedBrowseToAutomix();
             break;
 
         // Settings: toggle year range on/off (color-only feedback — no text change)

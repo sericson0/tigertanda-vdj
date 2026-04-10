@@ -139,6 +139,13 @@ public:
     void runTandaSearch();
     void resetAll();
     void runSmartSearch();
+    // Browser search workflow — saves current folder, fires VDJ search,
+    // schedules runSmartSearch timer. runSmartSearch reads results and
+    // restores the saved folder.
+    void triggerBrowserSearch (const TgRecord& rec);
+    // ADD button — re-issues the last search, scrolls to the selected
+    // browseItem's stored browserIndex, sends playlist_add, restores folder.
+    void addSelectedBrowseToAutomix();
 
     // Settings (TigerTanda.cpp)
     void loadSettings();
@@ -195,6 +202,12 @@ public:
     // Remember last search target so we don't re-fire on redundant requests
     std::wstring lastSmartSearchTitle;
     std::wstring lastSmartSearchArtist;
+    // Folder path saved at start of a search cycle; restored when done
+    std::wstring savedBrowseFolder;
+    // Raw VDJ search query string used to populate the current browseItems.
+    // ADD needs this to re-issue the same search so saved browserIndex
+    // values still line up with VDJ's result order.
+    std::wstring lastBrowserSearchQuery;
 
     // ── Prelisten ────────────────────────────────────────────────────────────
     bool              prelistenActive    = false;
