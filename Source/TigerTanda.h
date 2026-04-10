@@ -66,6 +66,7 @@ inline constexpr UINT_PTR TIMER_BROWSE_POLL     = 1;
 inline constexpr UINT_PTR TIMER_SMART_SEARCH   = 2;
 inline constexpr UINT_PTR TIMER_WAVE_UPDATE    = 3;
 inline constexpr UINT_PTR TIMER_SEARCH_DEBOUNCE = 4;
+inline constexpr UINT_PTR TIMER_HOVER_POPUP     = 5;  // 1s dwell before showing hover popup
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Font size constants (pt — passed to createFont)
@@ -80,7 +81,7 @@ inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand 
 //  Layout constants (compact / tab mode only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_H          = 396;
+inline constexpr int DLG_H          = 390;
 inline constexpr int TOP_GAP        = 4;     // compact gap below top bar
 inline constexpr int DLG_W          = 700;
 inline constexpr int TOP_H          = 30;    // compact top bar
@@ -261,10 +262,11 @@ public:
     HWND hBtnYearRange     = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
-    HWND hListTooltip      = nullptr;   // tracking tooltip for per-row listbox metadata
+    HWND hHoverPopup       = nullptr;   // themed custom popup window for browse-row metadata
+    int  hoverPopupItem    = -1;        // browse row the popup is currently keyed on (-1 = hidden)
+    int  hoverPendingItem  = -1;        // row queued by dwell timer but not yet shown
+    POINT hoverPendingPt   = {};        // screen position captured when dwell started
     HWND hoveredBtn        = nullptr;   // currently hovered owner-draw button (for hover highlight)
-    HWND hoveredList       = nullptr;   // listbox currently being hovered, for tooltip tracking
-    int  hoveredListItem   = -1;
 
     // ── GDI resources ────────────────────────────────────────────────────────
     HFONT fontNormal    = nullptr;  // FONT_SIZE_NORMAL pt regular

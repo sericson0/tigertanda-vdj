@@ -41,138 +41,236 @@ static TigerTandaPlugin* getPlugin (HWND hwnd)
     return reinterpret_cast<TigerTandaPlugin*> (GetWindowLongPtrW (hwnd, GWLP_USERDATA));
 }
 
-// Build the tooltip text string for a given row in the matches list.
-static std::wstring buildMatchTooltip (const TgRecord& rec)
+// ── Hover popup (custom themed window for browse-row metadata) ────────────
+//
+// Shows album name and star rating for the hovered browse result after a
+// 1-second dwell. Clamped to stay inside the plugin window bounds.
+// ─────────────────────────────────────────────────────────────────────────
+
+static constexpr UINT HOVER_POPUP_DWELL_MS = 1000;
+
+static const wchar_t* HOVER_POPUP_CLASS = L"TigerTandaHoverPopup";
+
+// Compute the popup size given a browse item. Height depends on how many
+// rows we actually show (album may be empty, stars may be zero).
+static SIZE hoverPopupSize (const BrowseItem& bi)
 {
+    const int lineH  = 18;
+    const int padX   = 10;
+    const int padY   = 8;
+    int rows = 0;
+    if (!bi.album.empty()) ++rows;
+    if (bi.stars > 0)      ++rows;
+    if (rows == 0) rows = 1;  // placeholder "(no metadata)"
+    SIZE sz;
+    sz.cx = 240;
+    sz.cy = padY * 2 + rows * lineH;
+    return sz;
+}
+
+// Build a 5-star visual: filled stars for bi.stars, hollow for the rest.
+// Uses ASCII ★ ☆ (BMP characters, safe for MSVC).
+static std::wstring buildStarString (int stars)
+{
+    if (stars < 0) stars = 0;
+    if (stars > 5) stars = 5;
     std::wstring s;
-    auto addLine = [&] (const wchar_t* label, const std::wstring& val)
-    {
-        if (val.empty()) return;
-        if (!s.empty()) s += L"\r\n";
-        s += label;
-        s += val;
-    };
-    addLine (L"Title: ",      rec.title);
-    addLine (L"Bandleader: ", rec.bandleader);
-    addLine (L"Singer: ",     rec.singer);
-    addLine (L"Date: ",       rec.date);
-    addLine (L"Genre: ",      rec.genre);
-    addLine (L"Label: ",      rec.label);
-    addLine (L"Orchestra: ",  rec.orchestra);
-    addLine (L"Composer: ",   rec.composer);
-    addLine (L"Author: ",     rec.author);
-    addLine (L"Arranger: ",   rec.arranger);
-    addLine (L"Group: ",      rec.grouping);
+    for (int i = 0; i < 5; ++i)
+        s += (i < stars) ? L"\u2605" : L"\u2606";
     return s;
 }
 
-// Build the tooltip text string for a given row in the browse list.
-static std::wstring buildBrowseTooltip (const BrowseItem& bi)
+// Paint the popup body: dark bg, card border, Album row, stars row.
+static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
 {
-    std::wstring s;
-    auto addLine = [&] (const wchar_t* label, const std::wstring& val)
-    {
-        if (val.empty()) return;
-        if (!s.empty()) s += L"\r\n";
-        s += label;
-        s += val;
-    };
-    addLine (L"Title: ",  bi.title);
-    addLine (L"Artist: ", bi.artist);
-    addLine (L"Album: ",  bi.album);
-    addLine (L"Year: ",   bi.year);
+    if (!p || p->hoverPopupItem < 0
+        || p->hoverPopupItem >= (int) p->browseItems.size())
+        return;
 
+    const BrowseItem& bi = p->browseItems[p->hoverPopupItem];
+
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint (popup, &ps);
+
+    RECT client;
+    GetClientRect (popup, &client);
+
+    // Background + 1px border
+    fillRect (hdc, client, TCol::card);
+    HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
+    HPEN oldPen = (HPEN) SelectObject (hdc, pen);
+    HBRUSH oldBr = (HBRUSH) SelectObject (hdc, GetStockObject (NULL_BRUSH));
+    Rectangle (hdc, client.left, client.top, client.right, client.bottom);
+    SelectObject (hdc, oldPen);
+    SelectObject (hdc, oldBr);
+    DeleteObject (pen);
+
+    const int padX  = 10;
+    const int padY  = 8;
+    const int lineH = 18;
+    int y = client.top + padY;
+
+    auto drawRow = [&] (const std::wstring& label, const std::wstring& value,
+                        COLORREF valueColor, HFONT valueFont)
+    {
+        // Label in dim gray, value in bright / provided color
+        RECT labelR { client.left + padX, y, client.left + padX + 60, y + lineH };
+        drawText (hdc, labelR, label, TCol::textDim, p->fontSmall,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        RECT valueR { client.left + padX + 60, y, client.right - padX, y + lineH };
+        drawText (hdc, valueR, value, valueColor, valueFont,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        y += lineH;
+    };
+
+    bool any = false;
+    if (!bi.album.empty())
+    {
+        drawRow (L"Album", bi.album, TCol::textBright, p->fontNormal);
+        any = true;
+    }
     if (bi.stars > 0)
     {
-        if (!s.empty()) s += L"\r\n";
-        s += L"Stars: ";
-        s += std::to_wstring (bi.stars);
+        drawRow (L"Rating", buildStarString (bi.stars), TCol::accentBrt, p->fontNormal);
+        any = true;
     }
-    if (bi.playCount > 0)
+    if (!any)
     {
-        if (!s.empty()) s += L"\r\n";
-        s += L"Playcount: ";
-        s += std::to_wstring (bi.playCount);
+        RECT r { client.left + padX, y, client.right - padX, y + lineH };
+        drawText (hdc, r, L"(no metadata)", TCol::textDim, p->fontSmall,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 
-    addLine (L"Notes: ",    bi.comment);
-    addLine (L"File: ",     bi.filePath);
-    return s;
+    EndPaint (popup, &ps);
 }
 
-// Subclass proc for matches and browse listboxes — tracks mouse movement
-// and updates a tracking tooltip with per-row metadata. Hides when the
-// mouse leaves the control.
-static LRESULT CALLBACK listTooltipSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+static LRESULT CALLBACK hoverPopupWndProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    auto* p = reinterpret_cast<TigerTandaPlugin*> (GetWindowLongPtrW (hwnd, GWLP_USERDATA));
+
+    switch (msg)
+    {
+    case WM_CREATE:
+    {
+        auto cs = reinterpret_cast<CREATESTRUCT*> (lp);
+        SetWindowLongPtrW (hwnd, GWLP_USERDATA, (LONG_PTR) cs->lpCreateParams);
+        return 0;
+    }
+    case WM_ERASEBKGND:
+        return 1;  // we paint the entire client area in WM_PAINT
+    case WM_PAINT:
+        hoverPopupPaint (hwnd, p);
+        return 0;
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;  // never catch mouse — popup is display-only
+    }
+    return DefWindowProcW (hwnd, msg, wp, lp);
+}
+
+static void ensureHoverPopupClass (HINSTANCE hInst)
+{
+    static bool registered = false;
+    if (registered) return;
+    WNDCLASSEXW wc {};
+    wc.cbSize = sizeof (wc);
+    wc.lpfnWndProc = hoverPopupWndProc;
+    wc.hInstance = hInst;
+    wc.hCursor = LoadCursor (nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr;  // WM_PAINT does the fill
+    wc.lpszClassName = HOVER_POPUP_CLASS;
+    RegisterClassExW (&wc);
+    registered = true;
+}
+
+// Position the popup next to a screen point but clamped to the plugin
+// window's screen rect so it never extends beyond the plugin area.
+static void positionHoverPopup (TigerTandaPlugin* p, HWND popup, POINT cursorScreen, SIZE sz)
+{
+    if (!p || !p->hDlg) return;
+    RECT pluginRect;
+    GetWindowRect (p->hDlg, &pluginRect);
+
+    int x = cursorScreen.x + 14;
+    int y = cursorScreen.y + 18;
+
+    if (x + sz.cx > pluginRect.right)  x = pluginRect.right  - sz.cx;
+    if (y + sz.cy > pluginRect.bottom) y = pluginRect.bottom - sz.cy;
+    if (x < pluginRect.left)           x = pluginRect.left;
+    if (y < pluginRect.top)            y = pluginRect.top;
+
+    SetWindowPos (popup, HWND_TOPMOST, x, y, sz.cx, sz.cy,
+                  SWP_NOACTIVATE);
+}
+
+static void showHoverPopupNow (TigerTandaPlugin* p)
+{
+    if (!p || !p->hHoverPopup) return;
+    if (p->hoverPendingItem < 0
+        || p->hoverPendingItem >= (int) p->browseItems.size())
+        return;
+
+    p->hoverPopupItem = p->hoverPendingItem;
+    const BrowseItem& bi = p->browseItems[p->hoverPopupItem];
+    SIZE sz = hoverPopupSize (bi);
+    positionHoverPopup (p, p->hHoverPopup, p->hoverPendingPt, sz);
+    InvalidateRect (p->hHoverPopup, nullptr, TRUE);
+    ShowWindow (p->hHoverPopup, SW_SHOWNOACTIVATE);
+}
+
+static void hideHoverPopup (TigerTandaPlugin* p)
+{
+    if (!p) return;
+    if (p->hHoverPopup && IsWindowVisible (p->hHoverPopup))
+        ShowWindow (p->hHoverPopup, SW_HIDE);
+    p->hoverPopupItem = -1;
+    p->hoverPendingItem = -1;
+    if (p->hDlg)
+        KillTimer (p->hDlg, TIMER_HOVER_POPUP);
+}
+
+// Subclass proc for the browse listbox — tracks mouse movement, queues the
+// dwell timer, hides on mouse leave. Only attached to the browse list.
+static LRESULT CALLBACK browseHoverSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                                  UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {
     auto* p = reinterpret_cast<TigerTandaPlugin*> (dwRefData);
-    if (!p || !p->hListTooltip) return DefSubclassProc (hwnd, msg, wp, lp);
+    if (!p) return DefSubclassProc (hwnd, msg, wp, lp);
 
     switch (msg)
     {
     case WM_MOUSEMOVE:
     {
-        // Which item is under the mouse?
         POINT pt = { GET_X_LPARAM (lp), GET_Y_LPARAM (lp) };
         DWORD itemInfo = (DWORD) SendMessageW (hwnd, LB_ITEMFROMPOINT, 0, MAKELPARAM (pt.x, pt.y));
         bool outside = HIWORD (itemInfo) != 0;
         int item = outside ? -1 : (int) LOWORD (itemInfo);
 
-        // Build text for this row
-        std::wstring text;
-        if (item >= 0)
+        if (item < 0 || item >= (int) p->browseItems.size())
         {
-            if (hwnd == p->hResultsList)
-            {
-                if (item < (int) p->results.size())
-                    text = buildMatchTooltip (p->results[item]);
-            }
-            else if (hwnd == p->hBrowseList)
-            {
-                if (item < (int) p->browseItems.size())
-                    text = buildBrowseTooltip (p->browseItems[item]);
-            }
+            hideHoverPopup (p);
+        }
+        else if (item != p->hoverPendingItem && item != p->hoverPopupItem)
+        {
+            // New row: reset dwell timer, hide any currently showing popup
+            if (p->hHoverPopup && IsWindowVisible (p->hHoverPopup))
+                ShowWindow (p->hHoverPopup, SW_HIDE);
+            p->hoverPopupItem = -1;
+            p->hoverPendingItem = item;
+            POINT screen = pt;
+            ClientToScreen (hwnd, &screen);
+            p->hoverPendingPt = screen;
+            if (p->hDlg)
+                SetTimer (p->hDlg, TIMER_HOVER_POPUP, HOVER_POPUP_DWELL_MS, nullptr);
+        }
+        else if (item == p->hoverPendingItem && item != p->hoverPopupItem)
+        {
+            // Same pending row, cursor moving within it — update captured
+            // position so the popup shows where the cursor ends up settling.
+            POINT screen = pt;
+            ClientToScreen (hwnd, &screen);
+            p->hoverPendingPt = screen;
         }
 
-        // Only bother the tooltip when the hovered row actually changes.
-        if (hwnd != p->hoveredList || item != p->hoveredListItem)
-        {
-            p->hoveredList = hwnd;
-            p->hoveredListItem = item;
-
-            TOOLINFOW ti {};
-            ti.cbSize = sizeof (ti);
-            ti.uFlags = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
-            ti.hwnd   = GetParent (hwnd);
-            ti.uId    = (UINT_PTR) hwnd;
-            ti.lpszText = text.empty() ? (LPWSTR) L"" : (LPWSTR) text.c_str();
-
-            if (text.empty())
-            {
-                SendMessageW (p->hListTooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM) &ti);
-            }
-            else
-            {
-                SendMessageW (p->hListTooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM) &ti);
-                // Position below-right of the cursor
-                POINT screenPt = pt;
-                ClientToScreen (hwnd, &screenPt);
-                SendMessageW (p->hListTooltip, TTM_TRACKPOSITION, 0,
-                              MAKELPARAM (screenPt.x + 14, screenPt.y + 18));
-                SendMessageW (p->hListTooltip, TTM_TRACKACTIVATE, TRUE, (LPARAM) &ti);
-            }
-        }
-        else if (item >= 0)
-        {
-            // Same row, just reposition to follow the cursor
-            POINT screenPt = pt;
-            ClientToScreen (hwnd, &screenPt);
-            SendMessageW (p->hListTooltip, TTM_TRACKPOSITION, 0,
-                          MAKELPARAM (screenPt.x + 14, screenPt.y + 18));
-        }
-
-        // Request WM_MOUSELEAVE so we can hide the tooltip when the mouse exits.
         TRACKMOUSEEVENT tme {};
         tme.cbSize = sizeof (tme);
         tme.dwFlags = TME_LEAVE;
@@ -182,23 +280,11 @@ static LRESULT CALLBACK listTooltipSubclassProc (HWND hwnd, UINT msg, WPARAM wp,
     }
 
     case WM_MOUSELEAVE:
-    {
-        TOOLINFOW ti {};
-        ti.cbSize = sizeof (ti);
-        ti.uFlags = TTF_IDISHWND;
-        ti.hwnd = GetParent (hwnd);
-        ti.uId  = (UINT_PTR) hwnd;
-        SendMessageW (p->hListTooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM) &ti);
-        if (p->hoveredList == hwnd)
-        {
-            p->hoveredList = nullptr;
-            p->hoveredListItem = -1;
-        }
+        hideHoverPopup (p);
         break;
-    }
 
     case WM_NCDESTROY:
-        RemoveWindowSubclass (hwnd, listTooltipSubclassProc, uIdSubclass);
+        RemoveWindowSubclass (hwnd, browseHoverSubclassProc, uIdSubclass);
         break;
     }
 
@@ -510,9 +596,11 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hCandList, lx, ly, usableW, candH, FALSE);
         ly += candH + 6;  // small gap before matches header
 
-        // "MATCHES (N)" header painted, 14px
+        // "MATCHES (N)" header painted, 14px. Match list extends down to
+        // the bottom margin (smaller than PAD to keep the layout tight).
+        const int BOTTOM_MARGIN = 4;
         int matchListTop = ly + 14;
-        int matchListBot = DLG_H - PAD;
+        int matchListBot = DLG_H - BOTTOM_MARGIN;
         MoveWindow (p->hResultsList, lx, matchListTop, lw, matchListBot - matchListTop, FALSE);
 
         // Right column
@@ -536,7 +624,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         int browseTop = headerRowY + findBtnH + 4;
         // Browse list is exactly 4 items tall — sized to avoid scrollbar.
         int browseH = BROWSE_ITEM_H * 4 + 2;
-        int preRowY = DLG_H - PAD - BTN_H;
+        int preRowY = DLG_H - BOTTOM_MARGIN - BTN_H;
         MoveWindow (p->hBrowseList, rx, browseTop, rw, browseH, FALSE);
 
         // Prelisten + ADD row
@@ -824,37 +912,17 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             addTip (p->hBtnYearRange,    L"Click to cycle year range");
         }
 
-        // Dedicated tracking tooltip for per-row listbox metadata. Uses
-        // TTF_TRACK so we can move it manually as the user hovers over
-        // different rows (standard dwell tooltips only fire once per HWND).
-        p->hListTooltip = CreateWindowExW (WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
-                                           WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
-                                           CW_USEDEFAULT, CW_USEDEFAULT,
-                                           CW_USEDEFAULT, CW_USEDEFAULT,
-                                           hwnd, nullptr, nullptr, nullptr);
-        if (p->hListTooltip)
-        {
-            SendMessageW (p->hListTooltip, TTM_SETMAXTIPWIDTH, 0, 360);
-            auto addListTool = [&] (HWND h)
-            {
-                TOOLINFOW ti {};
-                ti.cbSize = sizeof (ti);
-                ti.uFlags = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
-                ti.hwnd   = hwnd;
-                ti.uId    = (UINT_PTR) h;
-                ti.lpszText = (LPWSTR) L"";
-                SendMessageW (p->hListTooltip, TTM_ADDTOOLW, 0, (LPARAM) &ti);
-            };
-            if (p->hResultsList) addListTool (p->hResultsList);
-            if (p->hBrowseList)  addListTool (p->hBrowseList);
-
-            // Install mouse-move subclass on both lists so we can track the
-            // hovered row and update/position the tooltip dynamically.
-            if (p->hResultsList)
-                SetWindowSubclass (p->hResultsList, listTooltipSubclassProc, 1, (DWORD_PTR) p);
-            if (p->hBrowseList)
-                SetWindowSubclass (p->hBrowseList,  listTooltipSubclassProc, 1, (DWORD_PTR) p);
-        }
+        // Themed hover popup for browse results (album + stars after 1s
+        // dwell). Custom window so we can match the plugin theme colors
+        // and clamp the position to the plugin window bounds.
+        ensureHoverPopupClass (p->hInstance);
+        p->hHoverPopup = CreateWindowExW (WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+                                          HOVER_POPUP_CLASS, nullptr,
+                                          WS_POPUP,
+                                          0, 0, 240, 60,
+                                          hwnd, nullptr, p->hInstance, p);
+        if (p->hBrowseList)
+            SetWindowSubclass (p->hBrowseList, browseHoverSubclassProc, 1, (DWORD_PTR) p);
 
         // Sync year toggle text (just "YEAR" — active state shown by color)
         SetWindowTextW (p->hBtnYearToggle, L"YEAR");
@@ -910,7 +978,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Left column headers — aligned with usable width (reserving scrollbar space)
             const int sbW = GetSystemMetrics (SM_CXVSCROLL);
             const int usableW = lw - sbW;
-            int headerY = TOP_H + TOP_GAP;
+            int headerY = TOP_H + TOP_GAP - 2;  // nudge column headers up 2px
             const int gap = 4;
             const int yearW = 52;
             const int titleW = (usableW - yearW - gap * 2) * 55 / 100;
@@ -1151,6 +1219,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_TIMER:
     {
         if (!p) break;
+
+        // ── Hover popup dwell timer (fires 1 second after a new row hover) ──
+        if (wParam == TIMER_HOVER_POPUP)
+        {
+            KillTimer (hwnd, TIMER_HOVER_POPUP);
+            showHoverPopupNow (p);
+            return 0;
+        }
 
         // ── Search debounce timer (live search from edit fields) ──────────────
         if (wParam == TIMER_SEARCH_DEBOUNCE)
@@ -1962,8 +2038,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         KillTimer (hwnd, TIMER_SMART_SEARCH);
         KillTimer (hwnd, TIMER_WAVE_UPDATE);
         KillTimer (hwnd, TIMER_SEARCH_DEBOUNCE);
-        if (p && p->hTooltip)     { DestroyWindow (p->hTooltip);     p->hTooltip = nullptr; }
-        if (p && p->hListTooltip) { DestroyWindow (p->hListTooltip); p->hListTooltip = nullptr; }
+        KillTimer (hwnd, TIMER_HOVER_POPUP);
+        if (p && p->hTooltip)    { DestroyWindow (p->hTooltip);    p->hTooltip = nullptr; }
+        if (p && p->hHoverPopup) { DestroyWindow (p->hHoverPopup); p->hHoverPopup = nullptr; }
         return 0;
     }
 
