@@ -195,22 +195,22 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     py += lineH + 1;
 
-    // Row 2: Date (YYYY-mm-dd) · Genre · Label
+    // Row 2: Date (YYYY-mm-dd) · Genre
     std::wstring dateStr = formatDateYMD (rec.date);
     std::wstring line2;
-    if (!dateStr.empty())    line2 += dateStr;
-    if (!rec.genre.empty())  { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
-    if (!rec.label.empty())  { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.label; }
+    if (!dateStr.empty())   line2 += dateStr;
+    if (!rec.genre.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
     RECT r2 { px, py, r.right - 6, py + lineH };
     drawText (hdc, r2, line2, TCol::textDim, fontRows234,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     py += lineH + 1;
 
-    // Row 3: Orchestra
-    if (!rec.orchestra.empty())
+    // Row 3: Label: <label>
+    if (!rec.label.empty())
     {
+        std::wstring line3 = L"Label: " + rec.label;
         RECT r3 { px, py, r.right - 6, py + lineH };
-        drawText (hdc, r3, rec.orchestra, TCol::textDim, fontRows234,
+        drawText (hdc, r3, line3, TCol::textDim, fontRows234,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     py += lineH + 1;
