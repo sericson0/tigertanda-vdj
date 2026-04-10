@@ -66,15 +66,11 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
 
     // Use artist-aware search when artist is available
     if (!artist.empty())
-        candidates = matcher.findCandidatesForArtist (title, artist, 2, 40.0f);
+        candidates = matcher.findCandidatesForArtist (title, artist, 5, 40.0f);
 
     // Fallback: title-only search
     if (candidates.empty())
-        candidates = matcher.findCandidates (title, 2, 40.0f);
-
-    // Cap to 2 candidates (UI shows 2 rows)
-    if ((int) candidates.size() > 2)
-        candidates.resize (2);
+        candidates = matcher.findCandidates (title, 5, 40.0f);
 
     // Refresh candidates listbox
     if (hCandList)

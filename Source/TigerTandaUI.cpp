@@ -166,14 +166,13 @@ static std::wstring formatDateYMD (const std::wstring& raw)
 }
 
 // Metadata detail box for selected result
-// Row 1: Bandleader · Singer
-// Row 2: Date (YYYY-mm-dd) · Genre · Label
-// Row 3: Orchestra
-// Row 4: Group: <grouping>
-// fontRow1 = fontSmallBold (11pt bold), fontRows234 = fontNormal (13pt)
-// Both reduced 2pt from previous fontBold(13) / fontDetail(15) to fix descender clipping
+// Row 1: Title (bold, bright, larger)
+// Row 2: Bandleader · Singer
+// Row 3: Date (YYYY-mm-dd) · Genre
+// Row 4: Label: <label>
+// Row 5: Group: <grouping>
 static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
-                                 HFONT fontRow1, HFONT fontRows234, HFONT fontSmall)
+                                 HFONT fontTitle, HFONT fontBody, HFONT /*fontSmall*/)
 {
     fillRect (hdc, r, TCol::card);
 
@@ -184,44 +183,51 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
     SelectObject (hdc, old);
     DeleteObject (pen);
 
-    int px = r.left + 6;
-    int py = r.top + 4;
-    const int lineH = 17;  // increased from 16 — gives descenders room at 13pt
+    int px = r.left + 8;
+    int py = r.top + 5;
+    const int titleH = 22;
+    const int lineH  = 17;
 
-    // Row 1: Bandleader · Singer
-    std::wstring line1 = rec.bandleader;
-    if (!rec.singer.empty()) { if (!line1.empty()) line1 += L"  \u00B7  "; line1 += rec.singer; }
-    RECT r1 { px, py, r.right - 6, py + lineH };
-    drawText (hdc, r1, line1, TCol::textBright, fontRow1,
+    // Row 1: Track title (prominent)
+    RECT rTitle { px, py, r.right - 8, py + titleH };
+    drawText (hdc, rTitle, rec.title, TCol::textBright, fontTitle,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    py += titleH + 1;
+
+    // Row 2: Bandleader · Singer
+    std::wstring line2 = rec.bandleader;
+    if (!rec.singer.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.singer; }
+    RECT r2 { px, py, r.right - 8, py + lineH };
+    drawText (hdc, r2, line2, TCol::textNormal, fontBody,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     py += lineH + 1;
 
-    // Row 2: Date (YYYY-mm-dd) · Genre
+    // Row 3: Date · Genre
     std::wstring dateStr = formatDateYMD (rec.date);
-    std::wstring line2;
-    if (!dateStr.empty())   line2 += dateStr;
-    if (!rec.genre.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.genre; }
-    RECT r2 { px, py, r.right - 6, py + lineH };
-    drawText (hdc, r2, line2, TCol::textDim, fontRows234,
+    std::wstring line3;
+    if (!dateStr.empty())   line3 += dateStr;
+    if (!rec.genre.empty()) { if (!line3.empty()) line3 += L"  \u00B7  "; line3 += rec.genre; }
+    RECT r3 { px, py, r.right - 8, py + lineH };
+    drawText (hdc, r3, line3, TCol::textDim, fontBody,
               DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     py += lineH + 1;
 
-    // Row 3: Label: <label>
+    // Row 4: Label
     if (!rec.label.empty())
     {
-        std::wstring line3 = L"Label: " + rec.label;
-        RECT r3 { px, py, r.right - 6, py + lineH };
-        drawText (hdc, r3, line3, TCol::textDim, fontRows234,
+        std::wstring line4 = L"Label: " + rec.label;
+        RECT r4 { px, py, r.right - 8, py + lineH };
+        drawText (hdc, r4, line4, TCol::textDim, fontBody,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     py += lineH + 1;
 
-    // Row 4: Group: <grouping>
+    // Row 5: Group
     if (!rec.grouping.empty())
     {
-        std::wstring line4 = L"Group: " + rec.grouping;
-        RECT r4 { px, py, r.right - 6, py + lineH };
-        drawText (hdc, r4, line4, TCol::textDim, fontRows234,
+        std::wstring line5 = L"Group: " + rec.grouping;
+        RECT r5 { px, py, r.right - 8, py + lineH };
+        drawText (hdc, r5, line5, TCol::textDim, fontBody,
                   DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 }
@@ -331,13 +337,14 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hEditYear,   lx + usableW - yearW,     ly, yearW,   EDIT_H, FALSE);
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
-        // Candidates list (2 items max, no scrollbar — width matches input row)
+        // Candidates list (scrollable, shows 2 rows at a time) — use full lw
+        // so its scrollbar eats sbW on the right, aligning item columns with
+        // the input row above it.
         int candH = CAND_ITEM_H * 2 + 2;
-        MoveWindow (p->hCandList, lx, ly, usableW, candH, FALSE);
-        ly += candH + 8;  // 8px gap for separator
+        MoveWindow (p->hCandList, lx, ly, lw, candH, FALSE);
+        ly += candH + 6;  // small gap before matches header
 
         // "MATCHES (N)" header painted, 14px
-        // Results list uses full lw; its scrollbar eats sbW on the right, aligning items with inputs/candidates
         int matchListTop = ly + 14;
         int matchListBot = DLG_H - PAD;
         MoveWindow (p->hResultsList, lx, matchListTop, lw, matchListBot - matchListTop, FALSE);
@@ -346,8 +353,8 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int rx = leftW + PAD;
         const int rw = rightW - PAD * 2;
 
-        // "SELECTED TRACK" header painted, 14px
-        int ry = TOP_H + PAD + 14;
+        // "SELECTED TRACK" header painted, 20px (18px text + 2px bottom gap)
+        int ry = TOP_H + PAD + 20;
 
         // Detail box position (painted in WM_PAINT, not a control)
         int detailBot = ry + DETAIL_BOX_H;
@@ -361,8 +368,9 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
                     findBtnW, findBtnH, FALSE);
 
         int browseTop = headerRowY + findBtnH + 4;
+        // Browse list is exactly 4 items tall — sized to avoid scrollbar.
+        int browseH = BROWSE_ITEM_H * 4 + 2;
         int preRowY = DLG_H - PAD - BTN_H;
-        int browseH = preRowY - 6 - browseTop;
         MoveWindow (p->hBrowseList, rx, browseTop, rw, browseH, FALSE);
 
         // Prelisten + ADD row
@@ -583,9 +591,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         for (int i = 0; i < 5; ++i)
             p->hBtnHowTabs[i] = mkBtn (IDC_BTN_HOW_TAB_0 + i, kHowNames[i]);
 
-        // Candidates list (max 2 items, no scrollbar)
+        // Candidates list — scrollable, shows 2 rows at a time
         p->hCandList = CreateWindowW (L"LISTBOX", nullptr,
-                                      WS_CHILD | WS_VISIBLE
+                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL
                                       | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
                                       | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
                                       0, 0, 10, 10, hwnd,
@@ -599,9 +607,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                          0, 0, 10, 10, hwnd,
                                          (HMENU) IDC_RESULTS_LIST, nullptr, nullptr);
 
-        // Browse list
+        // Browse list — exactly 4 items, no scrollbar (height is sized to fit)
         p->hBrowseList = CreateWindowW (L"LISTBOX", nullptr,
-                                        WS_CHILD | WS_VISIBLE | WS_VSCROLL
+                                        WS_CHILD | WS_VISIBLE
                                         | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
                                         | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
                                         0, 0, 10, 10, hwnd,
@@ -715,33 +723,25 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             drawText (hdc, haR, L"ARTIST", TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
             drawText (hdc, hyR, L"YEAR",   TCol::textDim, p->fontSmall, DT_CENTER | DT_TOP | DT_SINGLELINE);
 
-            // Separator between candidates and matches
+            // "MATCHES (N)" header (no separator line above it)
             int candBot = TOP_H + PAD + 14 + EDIT_H + TRACK_SEARCH_GAP + CAND_ITEM_H * 2 + 2;
-            int sepY = candBot + 3;
-            HPEN sep = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-            HPEN oldSep = (HPEN) SelectObject (hdc, sep);
-            MoveToEx (hdc, lx, sepY, nullptr);
-            LineTo   (hdc, lx + lw, sepY);
-            SelectObject (hdc, oldSep);
-            DeleteObject (sep);
-
-            // "MATCHES (N)" header
-            int matchHeaderY = sepY + 4;
+            int matchHeaderY = candBot + 4;
             std::wstring matchLabel = L"MATCHES (" + std::to_wstring (p->results.size()) + L")";
             RECT mhR { lx, matchHeaderY, lx + lw, matchHeaderY + 12 };
             drawText (hdc, mhR, matchLabel, TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
 
-            // Right column: "SELECTED TRACK" header
+            // Right column: "SELECTED TRACK" header — larger, bolder
             int rHeaderY = TOP_H + PAD;
-            RECT stR { rx, rHeaderY, rx + rw, rHeaderY + 12 };
-            drawText (hdc, stR, L"SELECTED TRACK", TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
+            RECT stR { rx, rHeaderY, rx + rw, rHeaderY + 18 };
+            drawText (hdc, stR, L"SELECTED TRACK", TCol::textNormal, p->fontBold,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
             // Detail box
-            int detailY = rHeaderY + 14;
+            int detailY = rHeaderY + 20;
             RECT detR { rx, detailY, rx + rw, detailY + DETAIL_BOX_H };
             if (p->selectedResultIdx >= 0 && p->selectedResultIdx < (int) p->results.size())
                 drawResultDetailBox (hdc, detR, p->results[p->selectedResultIdx],
-                                     p->fontBold, p->fontNormal, p->fontSmall);
+                                     p->fontDetail, p->fontNormal, p->fontSmall);
             else
             {
                 fillRect (hdc, detR, TCol::card);
@@ -1485,7 +1485,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            drawText (hdc, titleR,  rec.title,         titleCol, confirmed ? p->fontBold : p->fontNormal,
+            // Title, artist, year — all use fontSmall for uniform row density.
+            // Confirmed candidate uses a bold variant on the title for emphasis.
+            drawText (hdc, titleR,  rec.title,         titleCol, confirmed ? p->fontSmallBold : p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
             drawText (hdc, artistR, formatArtist (rec), otherCol, p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
@@ -1526,7 +1528,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT artistR { tx + titleW + gap,       r.top, tx + titleW + gap + artistW,     r.bottom };
             RECT yearR   { r.right - yearW - 2,    r.top, r.right - 2,                     r.bottom };
 
-            drawText (hdc, titleR,  rec.title,         TCol::textBright, p->fontBold,
+            // All three columns use fontSmall for a clean, uniform row density
+            drawText (hdc, titleR,  rec.title,         TCol::textBright, p->fontSmallBold,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
             drawText (hdc, artistR, formatArtist (rec), TCol::textDim,    p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);

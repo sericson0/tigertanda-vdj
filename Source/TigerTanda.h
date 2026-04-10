@@ -80,18 +80,18 @@ inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand 
 //  Layout constants (compact / tab mode only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_H          = 380;
+inline constexpr int DLG_H          = 420;
 inline constexpr int DLG_W          = 700;
-inline constexpr int TOP_H          = 36;    // slightly shorter top bar
+inline constexpr int TOP_H          = 30;    // compact top bar
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;
 inline constexpr int BRAND_H        = 26;    // Tiger Tanda brand text row at bottom
-inline constexpr int CAND_ITEM_H    = 24;    // single-row, aligned with inputs (was 46)
+inline constexpr int CAND_ITEM_H    = 20;    // small-font row
 inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
-inline constexpr int RESULT_ITEM_H  = 22;    // increased from 20
-inline constexpr int BROWSE_ITEM_H  = 48;    // tall rows: 2 text rows + album art thumbnail
-inline constexpr int DETAIL_BOX_H   = 82;    // 4-row: Bandleader·Singer + Date·Genre·Label + Orchestra + Group
+inline constexpr int RESULT_ITEM_H  = 20;    // small-font row
+inline constexpr int BROWSE_ITEM_H  = 46;    // tall rows: 2 text rows + album art thumbnail
+inline constexpr int DETAIL_BOX_H   = 110;   // 5-row: Title + Bandleader·Singer + Date·Genre + Label + Group
 inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
 inline constexpr int TRACK_SEARCH_GAP = 4;   // reduced gap (was 14)
 inline constexpr int LEFT_COL_PCT   = 60;    // left column percentage
