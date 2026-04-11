@@ -684,7 +684,13 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
 
         // Browse list is exactly 4 items tall — sized to avoid scrollbar.
         int browseH = BROWSE_ITEM_H * 4 + 2;
-        int preRowY = DLG_H - BOTTOM_MARGIN - BTN_H;
+        // Anchor prelisten row directly below the browse list with a small
+        // visible gap, so the right column feels evenly spaced regardless of
+        // the exact DLG_H budget.
+        int preRowY = browseTop + browseH + PRELISTEN_TOP_GAP;
+        // Never collide with the bottom margin — clamp if needed.
+        int preRowMax = DLG_H - BOTTOM_MARGIN - BTN_H;
+        if (preRowY > preRowMax) preRowY = preRowMax;
         MoveWindow (p->hBrowseList, rx, browseTop, rw, browseH, FALSE);
 
         // Prelisten + ADD row
@@ -712,16 +718,19 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
 
     // Settings view (activeTab == 1) — two-column layout
     //
-    //   Left column (40%): SEARCH FILTERS + YEAR RANGE + metadata status
-    //   Right column (60%): HOW IT WORKS sections shown all at once
+    //   Left column (50%): SEARCH FILTERS (ARTISTS / YEAR RANGE / OTHER
+    //                      sub-groups) + Tiger Tag logo
+    //   Right column (50%): HOW IT WORKS sections shown all at once
     //                       (Option B: no sub-tabs, one scroll-free view)
     //
     // Layout constants are computed from DLG_W so the tab still fits if
-    // the dialog ever resizes.
+    // the dialog ever resizes. Sub-group header Ys are cached on the plugin
+    // struct so WM_PAINT can align painted headers with the control rows
+    // without duplicating the layout math.
     if (showS)
     {
         const int COL_GAP   = 10;
-        const int settingsL = DLG_W * 40 / 100;        // left column width
+        const int settingsL = DLG_W * 50 / 100;        // left column width (50/50)
         const int lx        = PAD;
         const int lw        = settingsL - PAD;          // usable left width
         const int rx        = settingsL + COL_GAP / 2;
@@ -729,43 +738,70 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         (void) rw;
 
         const int btnH = BTN_H - 4;
-        const int gap  = 4;
+        const int subHdrH = 14;   // matches Tanda-style section header font
+        const int subHdrPad = 3;  // gap below a sub-group header
+        const int rowGap = 1;     // tight gap between checkbox rows
+        const int subGroupGap = 6;  // vertical gap between sub-groups
 
-        // ── Left column: filters + year range + metadata status ─────────
+        // ── Left column: filter sub-groups ──────────────────────────────
+        // Sub-group headers (ARTISTS / YEAR RANGE / OTHER) carry the
+        // filter-section meaning on their own, so no top-level header is
+        // drawn here — it would just eat vertical space that the logo and
+        // the filters need.
         int sy = TOP_H + PAD;
 
-        // "SEARCH FILTERS" header reserves ~18px (painted in WM_PAINT)
-        sy += 18;
+        // Sub-group 1: ARTISTS
+        p->settingsArtistsHeaderY = sy;
+        sy += subHdrH + subHdrPad;
+        MoveWindow (p->hChkArtist, lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+        MoveWindow (p->hChkSinger, lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+        sy += subGroupGap;
 
-        // 2-column grid of filter checkboxes inside the left column
-        const int colW = (lw - gap) / 2;
+        // Sub-group 2: YEAR RANGE
+        p->settingsYearHeaderY = sy;
+        sy += subHdrH + subHdrPad;
 
-        MoveWindow (p->hChkArtist,    lx,               sy, colW, btnH, FALSE);
-        MoveWindow (p->hChkSinger,    lx + colW + gap,  sy, colW, btnH, FALSE);
-        sy += btnH + gap;
-        MoveWindow (p->hChkGrouping,  lx,               sy, colW, btnH, FALSE);
-        MoveWindow (p->hChkGenre,     lx + colW + gap,  sy, colW, btnH, FALSE);
-        sy += btnH + gap;
-        MoveWindow (p->hChkOrchestra, lx,               sy, colW, btnH, FALSE);
-        MoveWindow (p->hChkLabel,     lx + colW + gap,  sy, colW, btnH, FALSE);
-        sy += btnH + gap;
-        MoveWindow (p->hChkTrack,     lx,               sy, colW, btnH, FALSE);
-        sy += btnH + 12;
-
-        // "YEAR RANGE" header reserves ~18px (painted in WM_PAINT)
-        sy += 18;
-
-        // YEAR toggle (wide) + spinner [- label +]
-        const int toggleW  = colW;                     // mirror filter column
+        // YEAR toggle (wide) + spinner [- label +] — toggle on its own row,
+        // spinner on the row below so everything stays within the 50/50 column.
         const int spinBtnW = 20;
         const int spinLabelW = 46;
         const int spinGroupW = spinBtnW * 2 + spinLabelW + 2;
         int spinX = lx + lw - spinGroupW;              // right-anchored
 
-        MoveWindow (p->hBtnYearToggle, lx, sy, toggleW, btnH, FALSE);
+        MoveWindow (p->hBtnYearToggle, lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
         MoveWindow (p->hBtnYearMinus,  spinX,                                   sy + 1, spinBtnW,   btnH - 2, FALSE);
         MoveWindow (p->hBtnYearRange,  spinX + spinBtnW + 1,                    sy + 1, spinLabelW, btnH - 2, FALSE);
         MoveWindow (p->hBtnYearPlus,   spinX + spinBtnW + 1 + spinLabelW + 1,   sy + 1, spinBtnW,   btnH - 2, FALSE);
+        sy += btnH + rowGap;
+        sy += subGroupGap;
+
+        // Sub-group 3: OTHER
+        p->settingsOtherHeaderY = sy;
+        sy += subHdrH + subHdrPad;
+        MoveWindow (p->hChkGrouping,  lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+        MoveWindow (p->hChkGenre,     lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+        MoveWindow (p->hChkOrchestra, lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+        MoveWindow (p->hChkLabel,     lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+        MoveWindow (p->hChkTrack,     lx, sy, lw, btnH, FALSE);
+        sy += btnH + rowGap;
+
+        // Logo fills the remaining vertical space between the last filter
+        // and the bottom brand row, with a small margin on either side.
+        const int logoTopPad = 8;
+        const int logoBotPad = 4;
+        int logoTop = sy + logoTopPad;
+        int logoBot = DLG_H - PAD - BRAND_H - logoBotPad;
+        int logoH = logoBot - logoTop;
+        if (logoH < 0) logoH = 0;
+        p->settingsLogoY = logoTop;
+        p->settingsLogoH = logoH;
 
         // Hide legacy How-tab buttons (no longer used in Option B layout)
         for (int i = 0; i < 5; ++i)
@@ -1258,79 +1294,98 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
 
         // Settings view — Option B two-column layout:
-        //   Left  (40%): SEARCH FILTERS + YEAR RANGE + metadata status line
-        //   Right (60%): HOW IT WORKS sections all visible at once
+        //   Left  (50%): SEARCH FILTERS (ARTISTS / YEAR RANGE / OTHER) + logo
+        //   Right (50%): HOW IT WORKS sections all visible at once
         //
-        // The Tiger Tanda brand stays in the top bar. A small metadata
-        // status line pinned to the bottom of the left column reports the
-        // current metadata.csv path (or a warning if it failed to load).
+        // The Tiger Tanda brand stays in the top bar. Sub-group header Ys
+        // are pulled from the plugin struct (computed in applyLayout) so
+        // the painted headers line up with the control rows.
         if (p->activeTab == 1)
         {
             const int COL_GAP   = 10;
-            const int settingsL = DLG_W * 40 / 100;
+            const int settingsL = DLG_W * 50 / 100;
             const int lx        = PAD;
             const int lw        = settingsL - PAD;
             const int rx        = settingsL + COL_GAP / 2;
             const int rw        = DLG_W - PAD - rx;
 
-            // Helper: section header — uppercase bold in accent color with
-            // a thin horizontal rule beneath. Returns the Y *below* the rule.
+            // Helper: section header — matches the Tanda tab style
+            // (TCol::textDim + fontSmall, uppercase, no horizontal rule).
+            // Returns the Y below the label (14px label height + 4px gap).
             auto drawSectionHeader = [&] (int x, int y, int w, const wchar_t* label) -> int
             {
-                RECT hR { x, y, x + w, y + 16 };
-                drawText (hdc, hR, label, TCol::accent, p->fontBold,
-                          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                HPEN hp = CreatePen (PS_SOLID, 1, TCol::cardBorder);
-                HPEN oldH = (HPEN) SelectObject (hdc, hp);
-                MoveToEx (hdc, x, y + 17, nullptr);
-                LineTo   (hdc, x + w, y + 17);
-                SelectObject (hdc, oldH);
-                DeleteObject (hp);
-                return y + 18;
+                RECT hR { x, y, x + w, y + 14 };
+                drawText (hdc, hR, label, TCol::textDim, p->fontSmall,
+                          DT_LEFT | DT_TOP | DT_SINGLELINE);
+                return y + 14 + 4;
             };
 
-            // ── Left column headers ───────────────────────────────────────
-            int ly = TOP_H + PAD;
-            drawSectionHeader (lx, ly, lw, L"SEARCH FILTERS");
+            // ── Left column: sub-group headers only ───────────────────────
+            // Sub-group Ys come from applyLayout so painted labels line up
+            // exactly with their control rows.
+            drawSectionHeader (lx, p->settingsArtistsHeaderY, lw, L"ARTISTS");
+            drawSectionHeader (lx, p->settingsYearHeaderY,    lw, L"YEAR RANGE");
+            drawSectionHeader (lx, p->settingsOtherHeaderY,   lw, L"OTHER");
 
-            // The filter buttons (4 rows) + YEAR RANGE header y-position
-            // mirror applyLayout: header + 4 btn rows (btnH+gap each) + 12px.
-            const int btnH = BTN_H - 4;
-            const int gap  = 4;
-            int yrHeaderY = ly + 18 + (btnH + gap) * 4 + 12;
-            drawSectionHeader (lx, yrHeaderY, lw, L"YEAR RANGE");
-
-            // ── Metadata status pinned near bottom of left column ─────────
-            // Y just above the brand row.
-            int metaY = DLG_H - PAD - BRAND_H - 16;
-            if (p->metadataLoadFailed)
+            // ── Tiger Tag logo (lazy-loaded on first paint) ───────────────
+            if (!p->logoImage)
             {
-                RECT mR { lx, metaY, lx + lw, metaY + 16 };
-                drawText (hdc, mR,
-                          L"\u26A0  metadata.csv not found",
-                          TCol::filterActive, p->fontSmallBold,
-                          DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                HRSRC hRes = FindResource (p->hInstance, MAKEINTRESOURCE (IDR_LOGO), RT_RCDATA);
+                if (hRes)
+                {
+                    HGLOBAL hData = LoadResource (p->hInstance, hRes);
+                    DWORD   sz    = SizeofResource (p->hInstance, hRes);
+                    if (hData && sz > 0)
+                    {
+                        void* pData = LockResource (hData);
+                        HGLOBAL hMem = GlobalAlloc (GMEM_MOVEABLE, sz);
+                        if (hMem)
+                        {
+                            memcpy (GlobalLock (hMem), pData, sz);
+                            GlobalUnlock (hMem);
+                            IStream* stream = nullptr;
+                            if (SUCCEEDED (CreateStreamOnHGlobal (hMem, TRUE, &stream)))
+                            {
+                                auto* img = new Gdiplus::Image (stream);
+                                if (img->GetLastStatus() == Gdiplus::Ok)
+                                    p->logoImage = img;
+                                else
+                                    delete img;
+                                stream->Release();
+                            }
+                            else
+                                GlobalFree (hMem);
+                        }
+                    }
+                }
             }
-            else
+
+            if (p->logoImage && p->settingsLogoH > 0)
             {
-                std::wstring meta = L"Metadata: ";
-                if (p->metadataFolder.empty())
-                    meta += L"(auto-detect)";
-                else
-                    meta += p->metadataFolder;
-                RECT mR { lx, metaY, lx + lw, metaY + 16 };
-                drawText (hdc, mR, meta, TCol::textDim, p->fontSmall,
-                          DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_PATH_ELLIPSIS);
+                auto* img = reinterpret_cast<Gdiplus::Image*> (p->logoImage);
+                UINT imgW = img->GetWidth();
+                UINT imgH = img->GetHeight();
+                if (imgW > 0 && imgH > 0)
+                {
+                    const int logoMaxW = lw;
+                    int dstH = p->settingsLogoH;
+                    int dstW = (int) ((float) imgW / imgH * dstH);
+                    if (dstW > logoMaxW) { dstW = logoMaxW; dstH = (int) ((float) imgH / imgW * dstW); }
+                    int dstX = lx + (logoMaxW - dstW) / 2;
+                    int dstY = p->settingsLogoY + (p->settingsLogoH - dstH) / 2;
+                    Gdiplus::Graphics g (hdc);
+                    g.SetInterpolationMode (Gdiplus::InterpolationModeHighQualityBicubic);
+                    g.DrawImage (img, dstX, dstY, dstW, dstH);
+                }
             }
 
             // ── Right column: HOW IT WORKS (Option B — all sections) ──────
             int ry = TOP_H + PAD;
             ry = drawSectionHeader (rx, ry, rw, L"HOW IT WORKS");
-            ry += 6;
+            ry += 2;
 
-            // Each section: small bold accent header, then bullet lines in
-            // normal text. Content is kept tight to fit on-screen without
-            // scrolling. Uses the shared lineH so layouts stay uniform.
+            // Each section: dim uppercase sub-title matching the unified
+            // Tanda-style header, then bullet lines in normal text.
             struct HowSection {
                 const wchar_t* title;
                 const wchar_t* bullets[4];
@@ -1358,10 +1413,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             const int lineH   = 14;  // bullet line height
             for (const auto& sec : kSections)
             {
-                // Section sub-title — smaller than the SECTION header above
+                // Section sub-title — unified Tanda-style header
                 RECT tR { rx, ry, rx + rw, ry + titleH };
-                drawText (hdc, tR, sec.title, TCol::accentBrt, p->fontSmallBold,
-                          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                drawText (hdc, tR, sec.title, TCol::textDim, p->fontSmall,
+                          DT_LEFT | DT_TOP | DT_SINGLELINE);
                 ry += titleH + 1;
                 for (const wchar_t* b : sec.bullets)
                 {
@@ -1906,7 +1961,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 return TRUE;
             }
 
-            // Filter toggle buttons
+            // Filter toggle buttons — flat left-aligned checkbox style:
+            // ☑/☐ glyph + label, no background highlight, accent-colored
+            // check + bold label when on, dim glyph + normal label when off.
             if (di->CtlID == IDC_CHK_SAME_ARTIST    || di->CtlID == IDC_CHK_SAME_SINGER   ||
                 di->CtlID == IDC_CHK_SAME_GROUPING  || di->CtlID == IDC_CHK_SAME_GENRE    ||
                 di->CtlID == IDC_CHK_SAME_ORCHESTRA  || di->CtlID == IDC_CHK_SAME_LABEL   ||
@@ -1925,14 +1982,32 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
                 wchar_t ftxt[64] = {};
                 GetWindowTextW (di->hwndItem, ftxt, 64);
-                // Prepend checkbox glyph: ☑ when on, ☐ when off. Both glyphs
-                // are BMP (U+2610 / U+2611) so MSVC is happy.
-                std::wstring labelWithGlyph = (isOn ? L"\u2611  " : L"\u2610  ");
-                labelWithGlyph += ftxt;
-                // Darker orange when active (was TCol::accent)
-                COLORREF fbg = isOn ? TCol::filterActive : TCol::buttonBg;
-                COLORREF ffg = isOn ? TCol::textBright   : TCol::textDim;
-                drawOwnerButton (di, labelWithGlyph, fbg, ffg, p->fontSmall, p->hoveredBtn == di->hwndItem);
+
+                bool hovered = p->hoveredBtn == di->hwndItem
+                               || (di->itemState & ODS_HOTLIGHT) != 0;
+                HDC fhdc = di->hDC;
+
+                // Flat background — no on/off highlight, just a subtle
+                // hover shift.
+                fillRect (fhdc, di->rcItem, hovered ? TCol::buttonHover : TCol::panel);
+
+                // Checkbox glyph column (left inset 4px, fixed 18px wide).
+                RECT glyphR { di->rcItem.left + 4, di->rcItem.top,
+                              di->rcItem.left + 22, di->rcItem.bottom };
+                drawText (fhdc, glyphR,
+                          isOn ? L"\u2611" : L"\u2610",
+                          isOn ? TCol::accent : TCol::textDim,
+                          p->fontBold,
+                          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+                // Label column — follows the glyph with a small gap.
+                RECT labelR { glyphR.right + 4, di->rcItem.top,
+                              di->rcItem.right - 4, di->rcItem.bottom };
+                drawText (fhdc, labelR, ftxt,
+                          isOn ? TCol::textBright : TCol::textNormal,
+                          isOn ? p->fontBold     : p->fontNormal,
+                          DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
                 return TRUE;
             }
 

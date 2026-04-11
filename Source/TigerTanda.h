@@ -117,7 +117,11 @@ inline constexpr int DETAIL_ROW_GAP = 1;
 // Height of the "VDJ BROWSER RESULTS" header strip on the right column:
 // the FIND IN VDJ button and the painted header label both live in this
 // strip. Used to compute browse-list top vs. header/button Y.
-inline constexpr int BROWSE_HEADER_H = 22;  // 18px btn + 4px padding above the list
+inline constexpr int BROWSE_HEADER_H = 30;  // 18px btn + extra breathing room
+
+// Extra vertical padding above the prelisten/ADD row so it doesn't crowd
+// the browse list bottom.
+inline constexpr int PRELISTEN_TOP_GAP = 8;
 
 // Height of the metadata-load-failed banner (drawn at the top of the
 // main view when p->metadataLoadFailed is true).
@@ -226,6 +230,15 @@ public:
     int  matchHeaderY        = 0;  // "MATCHES (N)" header
     int  browseResultsHeaderY= 0;  // "VDJ BROWSER RESULTS" header (right column)
     RECT metaBannerRect      = {}; // banner rect (empty when not shown)
+
+    // Settings tab header/logo Ys — computed in applyLayout so WM_PAINT can
+    // align painted sub-group headers with the control rows without
+    // duplicating the layout math.
+    int  settingsArtistsHeaderY = 0;
+    int  settingsYearHeaderY    = 0;
+    int  settingsOtherHeaderY   = 0;
+    int  settingsLogoY          = 0;
+    int  settingsLogoH          = 0;
 
     // ── Browser/deck polling ─────────────────────────────────────────────────
     std::wstring lastSeenTitle;

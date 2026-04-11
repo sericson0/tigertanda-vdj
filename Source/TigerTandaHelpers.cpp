@@ -104,17 +104,8 @@ void setVdjRootHwnd (HWND pluginHwnd)
 
 bool isVdjHostForeground()
 {
-    HWND fg = GetForegroundWindow();
-    if (!fg) return false;
-
-    // Not yet wired — default to visible rather than permanently hidden.
-    if (!g_vdjRootHwnd || !IsWindow (g_vdjRootHwnd))
-        return true;
-
-    // Match VDJ itself or any top-level child/popup under the same root
-    // (settings dialogs, browser windows, etc.) so we don't hide mid-interaction.
-    HWND fgRoot = GetAncestor (fg, GA_ROOT);
-    return fgRoot == g_vdjRootHwnd;
+    // Simplified: plugin visibility follows VDJ's Z-order automatically.
+    return true;
 }
 
 std::wstring normalizeForSearch (const std::wstring& s)
