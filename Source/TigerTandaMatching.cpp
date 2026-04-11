@@ -121,12 +121,13 @@ void TigerTandaPlugin::runTandaSearch()
 
     if (confirmedIdx < 0 || confirmedIdx >= (int) candidates.size())
     {
-        // No reference confirmed — nothing to do
+        // No reference confirmed — clear results silently; the empty-state
+        // paint code will show the appropriate placeholder.
+        results.clear();
         if (hResultsList)
             SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
         if (hDlg)
-            MessageBoxW (hDlg, L"Please confirm a reference song first by clicking a candidate.",
-                         L"TigerTanda", MB_OK | MB_ICONINFORMATION);
+            InvalidateRect (hDlg, nullptr, FALSE);
         return;
     }
 
@@ -235,12 +236,16 @@ void TigerTandaPlugin::triggerBrowserSearch (const TgRecord& rec)
     lastSmartSearchArtist = rec.bandleader;
 
     // Save the user's current folder so we can restore it afterwards.
-    // Only overwrite if we actually have a folder — if the user is
-    // already on search-results view for some other reason, don't
-    // clobber an existing saved path.
-    std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
-    if (!curFolder.empty())
-        savedBrowseFolder = curFolder;
+    // Only save when we don't already have one stashed — if a previous
+    // search cycle is still in flight (user clicked FIND IN VDJ again),
+    // VDJ's current view is a search-results state and reading it would
+    // clobber the real folder we need to restore to.
+    if (savedBrowseFolder.empty())
+    {
+        std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
+        if (!curFolder.empty())
+            savedBrowseFolder = curFolder;
+    }
 
     std::wstring query = normalizeForSearch (rec.title);
     if (!rec.bandleader.empty())
@@ -290,16 +295,48 @@ void TigerTandaPlugin::addSelectedBrowseToAutomix()
     // Lock polling for the entire cycle.
     smartSearchPending = true;
 
-    // Save current folder if we're currently showing one.
-    std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
-    if (!curFolder.empty())
-        savedBrowseFolder = curFolder;
+    // Save current folder only if we don't already have one stashed from
+    // a previous search cycle (which may still be mid-restore).
+    if (savedBrowseFolder.empty())
+    {
+        std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
+        if (!curFolder.empty())
+            savedBrowseFolder = curFolder;
+    }
 
     // Re-issue the exact same query the smart search used. VDJ's result
     // ordering is stable for the same query, so browserIndex still lines up.
     vdjSend ("browser_window 'songs'");
     vdjSend ("search \"" + toUtf8 (lastBrowserSearchQuery) + "\"");
-    Sleep (400);  // let VDJ populate search results
+
+    // Wait up to 2 seconds for VDJ to populate search results — on a sluggish
+    // host a fixed sleep can return before results are in, causing us to scroll
+    // into an empty list and add the wrong file (or nothing).
+    int waited = 0;
+    int count = 0;
+    while (waited < 2000)
+    {
+        Sleep (50);
+        waited += 50;
+        count = (int) vdjGetValue ("file_count");
+        if (count > 0) break;
+    }
+    if (count == 0)
+    {
+        // Search produced nothing — abort rather than add the wrong file.
+        // Still restore the saved folder so we don't strand the user on an
+        // empty search-results view.
+        if (!savedBrowseFolder.empty())
+        {
+            vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
+            Sleep (20);
+            savedBrowseFolder.clear();
+        }
+        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+        smartSearchPending = false;
+        return;
+    }
 
     // Scroll to the saved index within the search results.
     vdjSend ("browser_scroll 'top'");
@@ -319,6 +356,7 @@ void TigerTandaPlugin::addSelectedBrowseToAutomix()
     {
         vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
         Sleep (20);
+        savedBrowseFolder.clear();
     }
 
     // Refresh polling baseline so the next tick sees "no change".
@@ -369,6 +407,7 @@ void TigerTandaPlugin::runSmartSearch()
         {
             vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
             Sleep (20);
+            savedBrowseFolder.clear();
         }
         lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
         lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
@@ -398,6 +437,13 @@ void TigerTandaPlugin::runSmartSearch()
 
     for (int i = 0; i < limit; ++i)
     {
+        // Early-bail token check: if the user confirmed a different candidate
+        // (or reset) while we're mid-enumeration, abandon without mutating
+        // browseItems or any other state. The newer search will manage
+        // smartSearchPending on its own path.
+        if ((i % 5) == 0 && myToken != smartSearchActiveToken)
+            return;
+
         BrowseItem bi;
         bi.title        = vdjGetString ("get_browsed_song 'title'");
         bi.artist       = vdjGetString ("get_browsed_song 'artist'");
@@ -517,11 +563,13 @@ void TigerTandaPlugin::runSmartSearch()
 
     // Return VDJ's browser to the user's saved folder. Prefer the explicit
     // savedBrowseFolder path (set by triggerBrowserSearch) over the less
-    // precise goto_last_folder.
+    // precise goto_last_folder. Clear savedBrowseFolder after restoring so
+    // the next search cycle captures a fresh folder.
     if (!savedBrowseFolder.empty())
     {
         vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
         Sleep (20);
+        savedBrowseFolder.clear();
     }
     else
     {

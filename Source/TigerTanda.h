@@ -9,6 +9,8 @@
 #include <windowsx.h>
 #include <uxtheme.h>
 #include <fstream>
+#include <thread>
+#include <atomic>
 
 #define IDR_LOGO 101
 
@@ -33,7 +35,9 @@ enum CtrlId
     IDC_CHK_SAME_LABEL     = 2306,
     IDC_CHK_SAME_TRACK     = 2307,
     IDC_BTN_YEAR_TOGGLE    = 2403,  // toggles whether year range applies
-    IDC_BTN_YEAR_RANGE     = 2405,  // cycles through year range values
+    IDC_BTN_YEAR_RANGE     = 2405,  // label showing current year range value
+    IDC_BTN_YEAR_MINUS     = 2406,  // year range spinner minus button
+    IDC_BTN_YEAR_PLUS      = 2407,  // year range spinner plus button
 
     // Matches tab
     IDC_RESULTS_LIST       = 2601,
@@ -81,7 +85,7 @@ inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand 
 //  Layout constants (compact / tab mode only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int DLG_H          = 390;
+inline constexpr int DLG_H          = 370;
 inline constexpr int TOP_GAP        = 4;     // compact gap below top bar
 inline constexpr int DLG_W          = 700;
 inline constexpr int TOP_H          = 30;    // compact top bar
@@ -93,10 +97,31 @@ inline constexpr int CAND_ITEM_H    = 24;    // 13pt row
 inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
 inline constexpr int RESULT_ITEM_H  = 24;    // 13pt row
 inline constexpr int BROWSE_ITEM_H  = 46;    // tall rows: 2 text rows + album art thumbnail
-inline constexpr int DETAIL_BOX_H   = 110;   // 5-row: Title + Bandleader·Singer + Date·Genre + Label + Group
+inline constexpr int DETAIL_BOX_H   = 88;    // 5-row uniform 13pt: Title + Bandleader·Singer + Date·Genre + Label + Group
 inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
 inline constexpr int TRACK_SEARCH_GAP = 4;   // reduced gap (was 14)
 inline constexpr int LEFT_COL_PCT   = 60;    // left column percentage
+
+// Shared year column width used by candidates / results / browse list rows
+// and by the painted column header above the search row. Keeping this
+// centralized ensures the three lists stay pixel-aligned with each other
+// and with the "YEAR" header.
+inline constexpr int YEAR_COL_W     = 52;
+
+// Detail box internal padding / row gap — used by drawResultDetailBox and
+// any code that reasons about its layout.
+inline constexpr int DETAIL_PAD_X   = 6;
+inline constexpr int DETAIL_PAD_Y   = 3;
+inline constexpr int DETAIL_ROW_GAP = 1;
+
+// Height of the "VDJ BROWSER RESULTS" header strip on the right column:
+// the FIND IN VDJ button and the painted header label both live in this
+// strip. Used to compute browse-list top vs. header/button Y.
+inline constexpr int BROWSE_HEADER_H = 22;  // 18px btn + 4px padding above the list
+
+// Height of the metadata-load-failed banner (drawn at the top of the
+// main view when p->metadataLoadFailed is true).
+inline constexpr int META_BANNER_H   = 22;
 
 // Window class name
 inline constexpr const wchar_t* WND_CLASS = L"TigerTandaVdjDialog";
@@ -194,6 +219,14 @@ public:
     int  activeTab    = 0;    // 0=Main, 1=Settings
     int  activeHowTab = 0;    // 0=Overview, 1=Track, 2=Matches, 3=Browser, 4=Filters
 
+    // ── Cached layout Ys (computed once in applyLayout; read in WM_PAINT) ───
+    // Avoid recomputing the same layout math in two places and going out of
+    // sync. All are in client-area coords.
+    int  columnHeaderY       = 0;  // "TITLE / ARTIST / YEAR" column headers
+    int  matchHeaderY        = 0;  // "MATCHES (N)" header
+    int  browseResultsHeaderY= 0;  // "VDJ BROWSER RESULTS" header (right column)
+    RECT metaBannerRect      = {}; // banner rect (empty when not shown)
+
     // ── Browser/deck polling ─────────────────────────────────────────────────
     std::wstring lastSeenTitle;
     std::wstring lastSeenArtist;
@@ -237,6 +270,16 @@ public:
     // ── Settings ─────────────────────────────────────────────────────────────
     std::wstring metadataFolder;
     fs::path     settingsPath;
+    // True if loadMetadata() could not find/open metadata.csv or it was empty.
+    // Read by the paint handler to render a warning banner; cleared on every
+    // successful load.
+    bool         metadataLoadFailed = false;
+
+    // Async metadata loading. Set to true while the background loader is
+    // running; flipped back to false from the worker thread when finished.
+    // Callers that read from `matcher` must check this flag first.
+    std::atomic<bool> metadataLoading { false };
+    std::thread       metadataThread;
 
     // ── Window handles ───────────────────────────────────────────────────────
     HWND hDlg              = nullptr;
@@ -260,6 +303,8 @@ public:
     HWND hBtnFindInVdj     = nullptr;
     HWND hBtnYearToggle    = nullptr;
     HWND hBtnYearRange     = nullptr;
+    HWND hBtnYearMinus     = nullptr;
+    HWND hBtnYearPlus      = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
     HWND hHoverPopup       = nullptr;   // themed custom popup window for browse-row metadata

@@ -89,12 +89,32 @@ std::wstring joinNonEmptyParts (const std::vector<std::wstring>& parts, const st
 //  System helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Cached VDJ main HWND — set by TigerTandaUI.cpp via setVdjRootHwnd() once the
+// plugin dialog has been created. Until it's set we fall back to "assume
+// foreground" so startup UI isn't mysteriously hidden.
+static HWND g_vdjRootHwnd = nullptr;
+
+void setVdjRootHwnd (HWND pluginHwnd)
+{
+    if (pluginHwnd && IsWindow (pluginHwnd))
+        g_vdjRootHwnd = GetAncestor (pluginHwnd, GA_ROOT);
+    else
+        g_vdjRootHwnd = nullptr;
+}
+
 bool isVdjHostForeground()
 {
-    DWORD fgPid = 0;
-    HWND  fg    = GetForegroundWindow();
-    if (fg) GetWindowThreadProcessId (fg, &fgPid);
-    return fgPid == GetCurrentProcessId();
+    HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+
+    // Not yet wired — default to visible rather than permanently hidden.
+    if (!g_vdjRootHwnd || !IsWindow (g_vdjRootHwnd))
+        return true;
+
+    // Match VDJ itself or any top-level child/popup under the same root
+    // (settings dialogs, browser windows, etc.) so we don't hide mid-interaction.
+    HWND fgRoot = GetAncestor (fg, GA_ROOT);
+    return fgRoot == g_vdjRootHwnd;
 }
 
 std::wstring normalizeForSearch (const std::wstring& s)

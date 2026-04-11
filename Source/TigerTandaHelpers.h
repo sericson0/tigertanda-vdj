@@ -35,6 +35,12 @@ namespace TCol
     inline const COLORREF matchLow    = RGB(60,  28,  28);
     inline const COLORREF matchSel    = RGB(80,  50,  20);
 
+    // Shared semantic colors (added in surgical UI fix pass)
+    inline const COLORREF buttonDisabled = RGB(24,  28,  42);
+    inline const COLORREF filterActive   = RGB(160, 75,  20);
+    inline const COLORREF waveformBg     = RGB(24,  28,  40);
+    inline const COLORREF waveformPeak   = RGB(255, 255, 255);
+
     inline COLORREF scoreColor (float s)
     {
         if (s >= 90.f) return good;
@@ -64,6 +70,10 @@ std::wstring trimWs (const std::wstring& s);
 std::wstring joinNonEmptyParts (const std::vector<std::wstring>& parts, const std::wstring& sep);
 
 // System helpers
+// Cache the VDJ main top-level HWND (walks up from the plugin's own HWND via
+// GA_ROOT). Call once from WM_CREATE. Until it's called, isVdjHostForeground()
+// conservatively returns true so the UI isn't hidden on startup.
+void setVdjRootHwnd (HWND pluginHwnd);
 bool isVdjHostForeground();
 
 // Prelisten waveform (fake bins from file-path hash, matches TigerTag)

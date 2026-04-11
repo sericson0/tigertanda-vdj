@@ -31,9 +31,22 @@ TigerTandaPlugin::TigerTandaPlugin()
     fontSmall     = createFont (FONT_SIZE_SMALL);
     fontSmallBold = createFont (FONT_SIZE_SMALL,  FW_BOLD);
     fontDetail    = createFont (FONT_SIZE_DETAIL);
+
+    // Fallbacks so later SelectObject calls don't silently fail if createFont returned null
+    if (!fontNormal)    fontNormal    = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+    if (!fontBold)      fontBold      = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+    if (!fontTitle)     fontTitle     = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+    if (!fontSmall)     fontSmall     = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+    if (!fontSmallBold) fontSmallBold = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+    if (!fontDetail)    fontDetail    = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+
     panelBrush     = CreateSolidBrush (TCol::panel);
     cardBrush      = CreateSolidBrush (TCol::card);
     searchBoxBrush = CreateSolidBrush (RGB (32, 36, 52));
+
+    if (!panelBrush)     panelBrush     = (HBRUSH) GetStockObject (DKGRAY_BRUSH);
+    if (!cardBrush)      cardBrush      = (HBRUSH) GetStockObject (DKGRAY_BRUSH);
+    if (!searchBoxBrush) searchBoxBrush = (HBRUSH) GetStockObject (DKGRAY_BRUSH);
 
     Gdiplus::GdiplusStartupInput gdiplusInput;
     Gdiplus::GdiplusStartup (&gdiplusToken, &gdiplusInput, nullptr);
@@ -103,7 +116,18 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetPluginInfo (TVdjPluginInfo8* info)
 
 ULONG VDJ_API TigerTandaPlugin::Release()
 {
+    // Join the metadata loader thread before teardown so the matcher isn't
+    // written to while ~TigerTandaPlugin is running.
+    if (metadataThread.joinable())
+        metadataThread.join();
+
     delete this;
+
+    // Unregister the main window class after the instance is destroyed.
+    // (Hover popup class unregister is handled separately.)
+    HINSTANCE hInst = GetModuleHandleW (nullptr);
+    UnregisterClassW (WND_CLASS, hInst);
+
     return S_OK;
 }
 
@@ -195,8 +219,13 @@ std::wstring TigerTandaPlugin::vdjGetString (const char* query)
 
 double TigerTandaPlugin::vdjGetValue (const char* query)
 {
+    // NOTE: callers cannot distinguish a failed GetInfo() from a legitimate
+    // 0.0 result — this is acceptable for the current call sites, which all
+    // treat 0 as "nothing yet / not available".
     double val = 0.0;
-    GetInfo (query, &val);
+    HRESULT hr = GetInfo (query, &val);
+    if (FAILED (hr))
+        return 0.0;
     return val;
 }
 
@@ -247,11 +276,24 @@ void TigerTandaPlugin::detectMetadataFolder()
 
 void TigerTandaPlugin::loadMetadata()
 {
+    metadataLoadFailed = true;  // assume failure until proven otherwise
     if (metadataFolder.empty()) return;
     std::error_code ec;
     fs::path csvPath = fs::path (metadataFolder) / L"metadata.csv";
-    if (fs::is_regular_file (csvPath, ec))
-        matcher.loadCsv (csvPath.wstring());
+    if (!fs::is_regular_file (csvPath, ec)) return;
+
+    // If a previous load is still running, join it before kicking off a new one.
+    if (metadataThread.joinable())
+        metadataThread.join();
+
+    metadataLoading = true;
+    std::wstring path = csvPath.wstring();
+    metadataThread = std::thread ([this, path]()
+    {
+        matcher.loadCsv (path);
+        metadataLoadFailed = (matcher.getRecordCount() == 0);
+        metadataLoading = false;
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -313,20 +355,40 @@ void TigerTandaPlugin::saveSettings()
 {
     if (settingsPath.empty()) return;
 
-    std::ofstream out (settingsPath, std::ios::trunc);
-    if (!out.is_open()) return;
+    // Write to a sibling .tmp file first, then atomically replace the target.
+    // On rename failure the original file is preserved untouched.
+    std::wstring tmpPath = settingsPath.wstring() + L".tmp";
 
-    out << "metadataFolder=" << toUtf8 (metadataFolder) << "\n";
-    out << "sameArtist=" << (filterSameArtist ? 1 : 0) << "\n";
-    out << "sameSinger=" << (filterSameSinger ? 1 : 0) << "\n";
-    out << "sameGrouping=" << (filterSameGrouping ? 1 : 0) << "\n";
-    out << "sameGenre=" << (filterSameGenre ? 1 : 0) << "\n";
-    out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
-    out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
-    out << "sameTrack=" << (filterSameTrack ? 1 : 0) << "\n";
-    out << "useYearRange=" << (filterUseYearRange ? 1 : 0) << "\n";
-    out << "yearRange=" << yearRange << "\n";
-    out << "activeTab=" << activeTab << "\n";
+    {
+        std::ofstream out (tmpPath, std::ios::trunc);
+        if (!out.is_open()) return;
+
+        out << "metadataFolder=" << toUtf8 (metadataFolder) << "\n";
+        out << "sameArtist=" << (filterSameArtist ? 1 : 0) << "\n";
+        out << "sameSinger=" << (filterSameSinger ? 1 : 0) << "\n";
+        out << "sameGrouping=" << (filterSameGrouping ? 1 : 0) << "\n";
+        out << "sameGenre=" << (filterSameGenre ? 1 : 0) << "\n";
+        out << "sameOrchestra=" << (filterSameOrchestra ? 1 : 0) << "\n";
+        out << "sameLabel=" << (filterSameLabel ? 1 : 0) << "\n";
+        out << "sameTrack=" << (filterSameTrack ? 1 : 0) << "\n";
+        out << "useYearRange=" << (filterUseYearRange ? 1 : 0) << "\n";
+        out << "yearRange=" << yearRange << "\n";
+        out << "activeTab=" << activeTab << "\n";
+        out.flush();
+        if (!out.good())
+        {
+            out.close();
+            DeleteFileW (tmpPath.c_str());
+            return;
+        }
+    }
+
+    if (!MoveFileExW (tmpPath.c_str(), settingsPath.wstring().c_str(),
+                      MOVEFILE_REPLACE_EXISTING))
+    {
+        // Rename failed — clean up the temp file; original settings remain intact.
+        DeleteFileW (tmpPath.c_str());
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
