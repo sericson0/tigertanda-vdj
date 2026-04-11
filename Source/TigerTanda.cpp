@@ -97,7 +97,7 @@ HRESULT VDJ_API TigerTandaPlugin::OnLoad()
     loadMetadata();
 
     DeclareParameterButton (&paramSearch, PID_SEARCH, "Search",       "Search");
-    DeclareParameterButton (&paramFind,   PID_FIND,   "Find Similar", "Find");
+    DeclareParameterButton (&paramFind,   PID_FIND,   "Re-find in VDJ", "ReFind");
     DeclareParameterButton (&paramReset,  PID_RESET,  "Reset",        "Reset");
 
     return S_OK;
@@ -195,7 +195,18 @@ HRESULT VDJ_API TigerTandaPlugin::OnParameter (int id)
             break;
         }
         case PID_FIND:
-            runTandaSearch();
+            // Re-fire the library search for whatever match the user has
+            // currently selected. Useful as a VDJ keyboard hotkey.
+            if (selectedResultIdx >= 0
+                && selectedResultIdx < (int) results.size()
+                && !smartSearchPending)
+            {
+                // Force re-fire by clearing last-search memo (triggerBrowserSearch
+                // bails early on a repeated target otherwise).
+                lastSmartSearchTitle.clear();
+                lastSmartSearchArtist.clear();
+                triggerBrowserSearch (results[selectedResultIdx]);
+            }
             break;
         case PID_RESET:
             resetAll();

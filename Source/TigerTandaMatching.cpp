@@ -182,16 +182,7 @@ void TigerTandaPlugin::runTandaSearch()
             SendMessageW (hResultsList, LB_ADDSTRING, 0, (LPARAM) L"");
     }
 
-    // Auto-select first match visually. Do NOT touch VDJ — the user must
-    // explicitly click "Find in VDJ" to trigger a browser search. This is
-    // the core of the Option A workflow: passive observer (polling) and
-    // active controller (VDJ commands) never run in the same cycle.
-    if (!results.empty())
-    {
-        selectedResultIdx = 0;
-        if (hResultsList)
-            SendMessageW (hResultsList, LB_SETCURSEL, 0, 0);
-    }
+    // No auto-selection — user must explicitly click or arrow-navigate to a match to trigger a library search.
 
     // Clear any stale browse results — they belong to a previous match.
     browseItems.clear();

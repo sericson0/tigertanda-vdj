@@ -261,6 +261,33 @@ static void hideHoverPopup (TigerTandaPlugin* p)
         KillTimer (p->hDlg, TIMER_HOVER_POPUP);
 }
 
+// Subclass proc for the matches listbox — distinguishes mouse-driven from
+// keyboard-driven selection changes so the LBN_SELCHANGE handler can decide
+// between firing the smart search immediately (click) or debouncing by
+// 250ms (arrow key). Only attached to the matches list.
+static LRESULT CALLBACK resultsListSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                                 UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    auto* p = reinterpret_cast<TigerTandaPlugin*> (dwRefData);
+    if (p)
+    {
+        switch (msg)
+        {
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONDBLCLK:
+            p->resultsLastInputWasMouse = true;
+            break;
+        case WM_KEYDOWN:
+            p->resultsLastInputWasMouse = false;
+            break;
+        case WM_NCDESTROY:
+            RemoveWindowSubclass (hwnd, resultsListSubclassProc, uIdSubclass);
+            break;
+        }
+    }
+    return DefSubclassProc (hwnd, msg, wp, lp);
+}
+
 // Subclass proc for the browse listbox — tracks mouse movement, queues the
 // dwell timer, hides on mouse leave. Only attached to the browse list.
 static LRESULT CALLBACK browseHoverSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
@@ -685,20 +712,12 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         // Detail box position (painted in WM_PAINT, not a control)
         int detailBot = ry + DETAIL_BOX_H;
 
-        // Right column: [detail box] → [browse header strip = label + FIND
-        // button] → [browse list] → [prelisten/ADD row].
-        // Anchor the browse list top to `detailBot + BROWSE_HEADER_H`
-        // first, then derive the FIND IN VDJ button Y by subtracting its
-        // height from the browse top. This way the browse list's top stays
-        // stable if findBtnH changes.
-        const int findBtnW = 90;
-        const int findBtnH = 18;
+        // Right column: [detail box] → [browse header strip = painted
+        // label only] → [browse list] → [prelisten/ADD row].
+        // With the FIND IN VDJ button removed, the header strip is
+        // simply a slim painted label row.
         int browseTop = detailBot + BROWSE_HEADER_H;
-        int findBtnY  = browseTop - findBtnH - 4;
         p->browseResultsHeaderY = detailBot + 2;  // 2px inset for painted label
-
-        MoveWindow (p->hBtnFindInVdj, rx + rw - findBtnW, findBtnY,
-                    findBtnW, findBtnH, FALSE);
 
         // Browse list is exactly 4 items tall — sized to avoid scrollbar.
         int browseH = BROWSE_ITEM_H * 4 + 2;
@@ -727,7 +746,6 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     showCtrl (p->hResultsList,   showMain);
     showCtrl (p->hBtnPrelisten,  showMain);
     showCtrl (p->hBtnAddEnd,     showMain);
-    showCtrl (p->hBtnFindInVdj,  showMain);
     // Browse list is shown only when it has items; otherwise the main
     // window paints a placeholder in its place.
     if (p->hBrowseList)
@@ -925,7 +943,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         {
             HWND tracked[] = {
                 p->hBtnClose, p->hBtnPrelisten,
-                p->hBtnAddEnd, p->hBtnFindInVdj, p->hBtnYearToggle, p->hBtnYearRange,
+                p->hBtnAddEnd, p->hBtnYearToggle, p->hBtnYearRange,
                 p->hBtnYearMinus, p->hBtnYearPlus,
                 p->hChkArtist, p->hChkSinger,
                 p->hChkGrouping, p->hChkGenre, p->hChkOrchestra, p->hChkLabel,
@@ -1057,15 +1075,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         // Prelisten + action buttons
         p->hBtnPrelisten = mkBtn (IDC_BTN_PRELISTEN, L"\u25B6");  // ▶
         p->hBtnAddEnd    = mkBtn (IDC_BTN_ADD_END,   L"ADD");
-        p->hBtnFindInVdj = mkBtn (IDC_BTN_FIND_IN_VDJ, L"FIND IN VDJ");
 
-        // Initial enable state: nothing selected yet in either list, so
-        // Prelisten / ADD / FIND IN VDJ are all disabled until a user
-        // selects something. Owner-draw handlers already dim the visuals
-        // based on state — this call actually blocks the clicks too.
+        // Initial enable state: nothing selected yet in the browse list,
+        // so Prelisten / ADD are disabled until a user selects something.
+        // Owner-draw handlers already dim the visuals based on state —
+        // this call actually blocks the clicks too.
         EnableWindow (p->hBtnPrelisten, FALSE);
         EnableWindow (p->hBtnAddEnd,    FALSE);
-        EnableWindow (p->hBtnFindInVdj, FALSE);
 
         // Tooltips for all buttons
         p->hTooltip = CreateWindowExW (0, TOOLTIPS_CLASS, nullptr,
@@ -1093,7 +1109,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             addTip (p->hBtnClose,        L"Close Tiger Tanda");
             addTip (p->hBtnPrelisten,    L"Preview selected song");
             addTip (p->hBtnAddEnd,       L"Add selected browse result to automix bottom");
-            addTip (p->hBtnFindInVdj,    L"Search VDJ library for the selected tanda match");
             addTip (p->hChkArtist,       L"Filter: same bandleader / artist");
             addTip (p->hChkSinger,       L"Filter: same singer");
             addTip (p->hChkGrouping,     L"Filter: same recording period / group");
@@ -1118,6 +1133,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                           hwnd, nullptr, p->hInstance, p);
         if (p->hBrowseList)
             SetWindowSubclass (p->hBrowseList, browseHoverSubclassProc, 1, (DWORD_PTR) p);
+        if (p->hResultsList)
+            SetWindowSubclass (p->hResultsList, resultsListSubclassProc, 1, (DWORD_PTR) p);
 
         // Sync year toggle text — shows "YEAR \u00B1N" when enabled, "YEAR OFF"
         // when disabled. The actual string is also recomputed on every draw
@@ -1253,24 +1270,27 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 SelectObject (hdc, old2);
                 DeleteObject (pen2);
                 RECT txtR { detR.left + 6, detR.top + 4, detR.right - 6, detR.bottom - 4 };
-                drawText (hdc, txtR, L"Select a match to see details", TCol::textDim, p->fontSmall,
+                drawText (hdc, txtR, L"Select a match to see details and library results", TCol::textDim, p->fontSmall,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
 
-            // "VDJ BROWSER RESULTS" header — vertically centered in the 18px
-            // button row next to FIND IN VDJ. Leave room on the right so the
-            // label doesn't overlap the button. Y is cached by applyLayout.
-            const int findBtnW2 = 90;
+            // "VDJ BROWSER RESULTS" header — slim painted label spanning
+            // the full right-column width. (FIND IN VDJ button removed.)
             RECT bhR { rx, p->browseResultsHeaderY,
-                       rx + rw - findBtnW2 - 6, p->browseResultsHeaderY + 18 };
+                       rx + rw, p->browseResultsHeaderY + 16 };
             drawText (hdc, bhR, L"VDJ BROWSER RESULTS", TCol::textDim, p->fontSmall,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
             // When browseItems is empty the listbox is hidden via
             // syncBrowseListVisibility, leaving the main window background
-            // in its place — draw a styled placeholder card there so the
-            // user knows what state they're in.
-            if (p->browseItems.empty() && p->hBrowseList)
+            // in its place. Under the new workflow, clicking or arrow-keying
+            // a match fires the search immediately (or within 250ms), so
+            // the "no selection / selected but not yet searched" states are
+            // only briefly visible — the detail box carries the instruction
+            // text in those cases. Only render the placeholder card while a
+            // search is actively pending or when a search returned no hits.
+            if (p->browseItems.empty() && p->hBrowseList
+                && (p->smartSearchPending || p->smartSearchNoResults))
             {
                 RECT blR;
                 GetWindowRect (p->hBrowseList, &blR);
@@ -1293,27 +1313,15 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
                 const wchar_t* primary = nullptr;
                 const wchar_t* secondary = nullptr;
-                bool hasSel = (p->selectedResultIdx >= 0
-                               && p->selectedResultIdx < (int) p->results.size());
                 if (p->smartSearchPending)
                 {
                     primary   = L"Searching VDJ library\u2026";
                     secondary = L"(this may take a moment)";
                 }
-                else if (p->smartSearchNoResults)
+                else  // smartSearchNoResults
                 {
                     primary   = L"No matches found in VDJ library";
                     secondary = L"Try a different match or check library folder";
-                }
-                else if (hasSel)
-                {
-                    primary   = L"Click FIND IN VDJ  \u2191";
-                    secondary = L"to search VDJ library";
-                }
-                else
-                {
-                    primary   = L"\u2190  Select a match from the list";
-                    secondary = L"to see library results here";
                 }
 
                 // Layout: two centered lines, primary above (bold) and
@@ -1445,11 +1453,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                  L"\u2022  Pick a candidate to lock it in",
                                  nullptr } },
                 { L"MATCHES",  { L"\u2022  Similar tracks from the CSV, filtered by your rules",
-                                 L"\u2022  Select a match to see its details",
+                                 L"\u2022  Click a match to auto-search your VDJ library",
                                  L"\u2022  Sorted by year; use YEAR RANGE to narrow further",
                                  nullptr } },
-                { L"BROWSER",  { L"\u2022  Click FIND IN VDJ to search your VDJ library",
-                                 L"\u2022  Top hits are ranked by artist, title, year & rating",
+                { L"BROWSER",  { L"\u2022  Click a match to search your VDJ library automatically",
+                                 L"\u2022  Top hits ranked by artist, title, year & rating",
                                  L"\u2022  ADD appends the highlighted hit to the automix",
                                  nullptr } },
                 { L"FILTERS",  { L"\u2022  ARTIST / SINGER / GENRE keep the tanda consistent",
@@ -1526,17 +1534,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         {
             KillTimer (hwnd, TIMER_SMART_SEARCH);
             p->runSmartSearch();
-            // runSmartSearch clears smartSearchPending (on success, no-results,
-            // and timeout). Re-enable FIND IN VDJ if we have a match selected
-            // and are no longer waiting on VDJ.
-            if (p->hBtnFindInVdj)
-            {
-                bool hasValidSel = (p->selectedResultIdx >= 0
-                                    && p->selectedResultIdx < (int) p->results.size());
-                EnableWindow (p->hBtnFindInVdj,
-                              hasValidSel && !p->smartSearchPending);
-            }
-            // Also refresh ADD/Prelisten enable state — browseItems may have
+            // Refresh ADD/Prelisten enable state — browseItems may have
             // been populated (or cleared) by runSmartSearch.
             if (p->hBtnAddEnd || p->hBtnPrelisten)
             {
@@ -1544,6 +1542,23 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                           && p->selectedBrowseIdx < (int) p->browseItems.size());
                 if (p->hBtnAddEnd)    EnableWindow (p->hBtnAddEnd,    hasValidBrowseSel);
                 if (p->hBtnPrelisten) EnableWindow (p->hBtnPrelisten, hasValidBrowseSel);
+            }
+            return 0;
+        }
+
+        // ── Match-select debounce (keyboard arrows through the matches list) ─
+        if (wParam == TIMER_MATCH_SELECT)
+        {
+            KillTimer (hwnd, TIMER_MATCH_SELECT);
+            if (p->selectedResultIdx >= 0
+                && p->selectedResultIdx < (int) p->results.size()
+                && !p->smartSearchPending)
+            {
+                // Force re-fire even if the target matches the last search —
+                // the user explicitly settled on this row after the debounce.
+                p->lastSmartSearchTitle.clear();
+                p->lastSmartSearchArtist.clear();
+                p->triggerBrowserSearch (p->results[p->selectedResultIdx]);
             }
             return 0;
         }
@@ -1696,22 +1711,34 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             }
             break;
 
-        // Result list selection — visual only, no VDJ round trip.
-        // User must click "Find in VDJ" to actually search the library.
+        // Result list selection — fires smart search immediately on mouse
+        // click, or after a 250ms debounce on keyboard arrow navigation so
+        // fast arrow scrolls don't hammer VDJ.
         case IDC_RESULTS_LIST:
             if (notifCode == LBN_SELCHANGE)
             {
-                int sel = (int) SendMessageW (p->hResultsList, LB_GETCURSEL, 0, 0);
-                p->selectedResultIdx = sel;
-                if (p->hResultsList) InvalidateRect (p->hResultsList, nullptr, FALSE);
-                if (p->hDlg)         InvalidateRect (p->hDlg,         nullptr, FALSE);
+                // A fresh selection always cancels any pending debounced
+                // search — whether we immediately fire a new one (mouse)
+                // or schedule another debounce (keyboard).
+                KillTimer (hwnd, TIMER_MATCH_SELECT);
 
-                // Enable FIND IN VDJ only when a valid match is selected and
-                // no search is currently in flight.
-                bool hasValidSel = (sel >= 0 && sel < (int) p->results.size());
-                if (p->hBtnFindInVdj)
-                    EnableWindow (p->hBtnFindInVdj,
-                                  hasValidSel && !p->smartSearchPending);
+                int sel = (int) SendMessageW (p->hResultsList, LB_GETCURSEL, 0, 0);
+                if (sel < 0 || sel >= (int) p->results.size())
+                {
+                    // Out-of-range / empty list: just clear state and bail.
+                    p->selectedResultIdx = -1;
+                    if (p->hResultsList) InvalidateRect (p->hResultsList, nullptr, FALSE);
+                    if (p->hDlg)         InvalidateRect (p->hDlg,         nullptr, FALSE);
+                    break;
+                }
+
+                // Same-row guard: Windows can re-fire LBN_SELCHANGE without
+                // an actual change (e.g., when focus returns to the listbox).
+                // Don't re-fire the search in that case.
+                if (sel == p->selectedResultIdx)
+                    break;
+
+                p->selectedResultIdx = sel;
 
                 // Bump the smart-search token so any in-flight runSmartSearch
                 // will discard its results when it reaches the token check.
@@ -1727,10 +1754,30 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                         SendMessageW (p->hBrowseList, LB_RESETCONTENT, 0, 0);
                 }
                 // Browse list just got cleared — ADD / Prelisten should
-                // become non-clickable until FIND IN VDJ repopulates.
+                // become non-clickable until the new search repopulates.
                 if (p->hBtnAddEnd)    EnableWindow (p->hBtnAddEnd,    FALSE);
                 if (p->hBtnPrelisten) EnableWindow (p->hBtnPrelisten, FALSE);
                 p->syncBrowseListVisibility();
+
+                // Fire the search: mouse click → immediate, keyboard → debounced.
+                if (p->resultsLastInputWasMouse)
+                {
+                    p->resultsLastInputWasMouse = false;
+                    if (!p->smartSearchPending)
+                    {
+                        // Force re-fire — user explicitly clicked the row.
+                        p->lastSmartSearchTitle.clear();
+                        p->lastSmartSearchArtist.clear();
+                        p->triggerBrowserSearch (p->results[sel]);
+                    }
+                }
+                else
+                {
+                    SetTimer (hwnd, TIMER_MATCH_SELECT, 250, nullptr);
+                }
+
+                if (p->hResultsList) InvalidateRect (p->hResultsList, nullptr, FALSE);
+                if (p->hDlg)         InvalidateRect (p->hDlg,         nullptr, FALSE);
             }
             break;
 
@@ -1824,31 +1871,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case IDC_BTN_ADD_END:
             p->addSelectedBrowseToAutomix();
             break;
-
-        // Find in VDJ — searches library for the currently selected tanda
-        // match, populates browse list with top 4 ranked results, restores
-        // the user's folder afterwards.
-        case IDC_BTN_FIND_IN_VDJ:
-        {
-            if (p->smartSearchPending) break;  // already searching
-            int sel = p->selectedResultIdx;
-            if (sel >= 0 && sel < (int) p->results.size())
-            {
-                // Force re-fire even if target matches last search — the user
-                // explicitly asked for it (e.g., they cleared the list earlier
-                // or want to retry).
-                p->lastSmartSearchTitle.clear();
-                p->lastSmartSearchArtist.clear();
-                p->triggerBrowserSearch (p->results[sel]);
-                // Disable the button for the duration of the search so
-                // the user can't double-fire while results are pending.
-                if (p->hBtnFindInVdj) EnableWindow (p->hBtnFindInVdj, FALSE);
-                // Repaint the button so its "pending" state shows immediately
-                if (p->hBtnFindInVdj) InvalidateRect (p->hBtnFindInVdj, nullptr, FALSE);
-                if (p->hBrowseList)   InvalidateRect (p->hBrowseList,   nullptr, FALSE);
-            }
-            break;
-        }
 
         // Settings: toggle year range on/off (dynamic label + color feedback)
         case IDC_BTN_YEAR_TOGGLE:
@@ -2104,17 +2126,6 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 else
                 { bg = TCol::buttonDisabled; fg = TCol::textDim; }
             }
-            else if (di->CtlID == IDC_BTN_FIND_IN_VDJ)
-            {
-                bool hasSel = (p->selectedResultIdx >= 0
-                               && p->selectedResultIdx < (int) p->results.size());
-                if (p->smartSearchPending)
-                { bg = RGB (60, 40, 15); fg = TCol::textDim; }
-                else if (!hasSel)
-                { bg = TCol::buttonDisabled; fg = TCol::textDim; }
-                else
-                { bg = RGB (35, 50, 70); fg = TCol::textBright; }
-            }
             else if (di->CtlID == IDC_BTN_YEAR_TOGGLE)
             {
                 bg = p->filterUseYearRange ? TCol::filterActive : TCol::buttonBg;
@@ -2129,8 +2140,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
             bool passHover = (di->CtlID != IDC_BTN_CLOSE) && btnHovered;
             HFONT btnFont = (di->CtlID == IDC_BTN_YEAR_TOGGLE
-                          || di->CtlID == IDC_BTN_YEAR_RANGE
-                          || di->CtlID == IDC_BTN_FIND_IN_VDJ)
+                          || di->CtlID == IDC_BTN_YEAR_RANGE)
                             ? p->fontSmall : p->fontNormal;
             drawOwnerButton (di, label, bg, fg, btnFont, passHover);
             return TRUE;
@@ -2213,12 +2223,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
-            // Reserve scrollbar width on the right (always — LBS_DISABLENOSCROLL)
-            // so the year column stays aligned with the input row / candidates
-            // regardless of row count. Column partition and text inset match
-            // the candidate list exactly.
-            const int sbW = GetSystemMetrics (SM_CXVSCROLL);
-            const int rightEdge = r.right - sbW;
+            // Column math mirrors the candidates list. Critical detail:
+            // LBS_DISABLENOSCROLL reserves the scrollbar column in the
+            // listbox client area, so r.right here is already equal to
+            // (listbox width - sbW). Do NOT subtract sbW again — that would
+            // shift the year column sbW pixels too far left and break
+            // alignment with the search row / candidates list above.
+            const int rightEdge = r.right;
             const int rw        = rightEdge - r.left;
             const int gap       = 4;
             const int titleColW  = (rw - YEAR_COL_W - gap * 2) * 55 / 100;

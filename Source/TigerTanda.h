@@ -52,7 +52,6 @@ enum CtrlId
     IDC_BROWSE_LIST        = 2901,
     IDC_BTN_PRELISTEN      = 2902,
     IDC_BTN_ADD_END        = 2903,
-    IDC_BTN_FIND_IN_VDJ    = 2904,  // "Find in VDJ" — triggers browser search for selected match
 
     // Settings: "How it works" sub-tabs
     IDC_BTN_HOW_TAB_0      = 2501,  // Overview
@@ -71,6 +70,7 @@ inline constexpr UINT_PTR TIMER_SMART_SEARCH   = 2;
 inline constexpr UINT_PTR TIMER_WAVE_UPDATE    = 3;
 inline constexpr UINT_PTR TIMER_SEARCH_DEBOUNCE = 4;
 inline constexpr UINT_PTR TIMER_HOVER_POPUP     = 5;  // 1s dwell before showing hover popup
+inline constexpr UINT_PTR TIMER_MATCH_SELECT    = 6;  // 250ms debounce before firing smart search from keyboard-driven match selection
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Font size constants (pt — passed to createFont)
@@ -115,9 +115,9 @@ inline constexpr int DETAIL_PAD_Y   = 3;
 inline constexpr int DETAIL_ROW_GAP = 1;
 
 // Height of the "VDJ BROWSER RESULTS" header strip on the right column:
-// the FIND IN VDJ button and the painted header label both live in this
-// strip. Used to compute browse-list top vs. header/button Y.
-inline constexpr int BROWSE_HEADER_H = 30;  // 18px btn + extra breathing room
+// the painted header label lives in this strip. With the FIND IN VDJ
+// button removed, the strip is now a slim label row.
+inline constexpr int BROWSE_HEADER_H = 18;
 
 // Extra vertical padding above the prelisten/ADD row so it doesn't crowd
 // the browse list bottom.
@@ -313,7 +313,6 @@ public:
     HWND hBrowseList       = nullptr;
     HWND hBtnPrelisten     = nullptr;
     HWND hBtnAddEnd        = nullptr;
-    HWND hBtnFindInVdj     = nullptr;
     HWND hBtnYearToggle    = nullptr;
     HWND hBtnYearRange     = nullptr;
     HWND hBtnYearMinus     = nullptr;
@@ -342,6 +341,11 @@ public:
     bool dialogRequestedOpen  = true;
     bool suppressNextHideSync = false;
     bool suppressEditChange   = false;  // true while polling updates edit boxes
+    // True if the most recent input that landed focus on the matches listbox
+    // was a mouse click (vs a keyboard arrow). Used by the LBN_SELCHANGE
+    // handler to decide between firing the smart search immediately (mouse)
+    // or debouncing by 250ms (keyboard scroll).
+    bool resultsLastInputWasMouse = false;
 };
 
 // Window procedure (TigerTandaUI.cpp)
