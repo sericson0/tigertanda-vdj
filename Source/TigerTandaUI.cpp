@@ -57,14 +57,16 @@ static const wchar_t* HOVER_POPUP_CLASS = L"TigerTandaHoverPopup";
 // Compute the popup size. Always renders a fixed 3-row layout so the
 // popup has a consistent footprint regardless of which fields are populated
 // (missing fields render as an em-dash instead of collapsing the row).
-// Rows: 1) Filename (bold), 2) Album, 3) Stars + plays
+// Rows: 1) Filename (bold small), 2) Album (small), 3) Stars + plays
 static constexpr int HOVER_POPUP_ROWS = 3;
 static SIZE hoverPopupSize (const BrowseItem& /*bi*/)
 {
-    const int lineH  = 18;
-    const int padY   = 8;
+    const int lineH  = 15;
+    const int padY   = 6;
     SIZE sz;
-    sz.cx = 300;
+    // Narrow so the popup fits inside the right column (right col ≈ 280px
+    // @ DLG_W=700) — stops it from spilling over the matches list on the left.
+    sz.cx = 240;
     sz.cy = padY * 2 + HOVER_POPUP_ROWS * lineH + 2;  // +2: small gap before row 3
     return sz;
 }
@@ -115,28 +117,30 @@ static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
     DeleteObject (pen);
 
     const int padX  = 10;
-    const int padY  = 8;
-    const int lineH = 18;
+    const int padY  = 6;
+    const int lineH = 15;
     int y = client.top + padY;
 
     const std::wstring kDash = L"\u2014";
 
-    // Row 1: Filename (bold, bright) — no label column
+    // Row 1: Filename (bold small, bright) — no label column.
+    // Use fontSmallBold (11pt) to keep the popup compact; it's tall enough
+    // for the filename to remain readable without dominating the panel.
     std::wstring fname = fileNameFromPath (bi.filePath);
     RECT r1 { client.left + padX, y, client.right - padX, y + lineH };
     drawText (hdc, r1,
               fname.empty() ? kDash : fname,
               fname.empty() ? TCol::textDim : TCol::textBright,
-              p->fontBold,
+              p->fontSmallBold,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     y += lineH;
 
-    // Row 2: Album name
+    // Row 2: Album name (small — matches filename size)
     RECT r2 { client.left + padX, y, client.right - padX, y + lineH };
     drawText (hdc, r2,
               bi.album.empty() ? kDash : bi.album,
               bi.album.empty() ? TCol::textDim : TCol::textBright,
-              p->fontNormal,
+              p->fontSmall,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     y += lineH + 2;  // small visual gap before the meta row
 
@@ -211,14 +215,20 @@ static void ensureHoverPopupClass (HINSTANCE hInst)
 }
 
 // Position the popup next to a screen point but clamped to the plugin
-// window's screen rect so it never extends beyond the plugin area. If the
-// default below-cursor placement would clip the bottom of the plugin rect,
-// flip the popup above the cursor instead.
+// window's right column so it never covers the matches list on the left.
+// If the default below-cursor placement would clip the bottom of the plugin
+// rect, flip the popup above the cursor instead.
 static void positionHoverPopup (TigerTandaPlugin* p, HWND popup, POINT cursorScreen, SIZE sz)
 {
     if (!p || !p->hDlg) return;
     RECT pluginRect;
     GetWindowRect (p->hDlg, &pluginRect);
+
+    // Right column x range in screen coords. Mirrors the math in applyLayout:
+    // leftW = DLG_W * LEFT_COL_PCT / 100, rx = leftW + COL_GAP/2.
+    const int leftW = DLG_W * LEFT_COL_PCT / 100;
+    const int rxClient = leftW + 4 / 2;  // COL_GAP==4 in applyLayout
+    int rightColLeft = pluginRect.left + rxClient;
 
     int x = cursorScreen.x + 14;
     int y;
@@ -227,8 +237,10 @@ static void positionHoverPopup (TigerTandaPlugin* p, HWND popup, POINT cursorScr
     else
         y = cursorScreen.y - sz.cy - 8; // flipped above cursor
 
+    // Clamp x to the right column only — never let the popup extend into
+    // the left column and cover the selected match card.
     if (x + sz.cx > pluginRect.right) x = pluginRect.right - sz.cx;
-    if (x < pluginRect.left)          x = pluginRect.left;
+    if (x < rightColLeft)             x = rightColLeft;
     if (y < pluginRect.top)           y = pluginRect.top;
 
     SetWindowPos (popup, HWND_TOPMOST, x, y, sz.cx, sz.cy,
@@ -261,10 +273,58 @@ static void hideHoverPopup (TigerTandaPlugin* p)
         KillTimer (p->hDlg, TIMER_HOVER_POPUP);
 }
 
+// Advance the browse list selection by `direction` (+1 or -1), wrapping
+// at the ends. Used by the Tab-cycling logic in the listbox subclasses.
+// Also repaints the list and refreshes ADD/Prelisten + waveform state.
+static void cycleBrowseSelection (TigerTandaPlugin* p, int direction)
+{
+    if (!p) return;
+    int n = (int) p->browseItems.size();
+    if (n <= 0) return;
+
+    int cur = p->selectedBrowseIdx;
+    int next;
+    if (cur < 0)
+        next = (direction >= 0) ? 0 : (n - 1);
+    else
+        next = ((cur + direction) % n + n) % n;
+
+    p->selectedBrowseIdx = next;
+    if (p->hBrowseList)
+    {
+        SendMessageW (p->hBrowseList, LB_SETCURSEL, next, 0);
+        InvalidateRect (p->hBrowseList, nullptr, FALSE);
+    }
+
+    // ADD / Prelisten are never EnableWindow(FALSE)'d: disabled buttons do
+    // not receive mouse events, so their tooltips never show and right-click
+    // on ADD wouldn't reach our subclass. They're always enabled; the dim
+    // visual state is controlled purely by WM_DRAWITEM via `hasSel`, and
+    // the WM_COMMAND handlers no-op when `selectedBrowseIdx` is invalid.
+    if (p->hBtnAddEnd)    InvalidateRect (p->hBtnAddEnd,    nullptr, FALSE);
+    if (p->hBtnPrelisten) InvalidateRect (p->hBtnPrelisten, nullptr, FALSE);
+
+    const BrowseItem& bi = p->browseItems[next];
+    if (!bi.filePath.empty())
+    {
+        rebuildPrelistenWaveBins (p->prelistenWaveBins, bi.filePath);
+        p->prelistenWavePath = bi.filePath;
+        p->prelistenPos = 0.0;
+        if (p->hDlg)
+            InvalidateRect (p->hDlg, &p->prelistenWaveRect, FALSE);
+    }
+}
+
 // Subclass proc for the matches listbox — distinguishes mouse-driven from
 // keyboard-driven selection changes so the LBN_SELCHANGE handler can decide
 // between firing the smart search immediately (click) or debouncing by
-// 250ms (arrow key). Only attached to the matches list.
+// 250ms (arrow key). Also:
+//   • VK_DOWN with no current selection → select row 0 (Windows LB defaults
+//     don't auto-seed selection the first time the arrow is pressed, which
+//     feels broken to keyboard users).
+//   • VK_TAB / Shift+Tab → cycle through the browse result rows without
+//     moving keyboard focus. Lets the user press a match, then Tab through
+//     the three library hits with ADD ready to fire.
 static LRESULT CALLBACK resultsListSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                                  UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {
@@ -279,7 +339,54 @@ static LRESULT CALLBACK resultsListSubclassProc (HWND hwnd, UINT msg, WPARAM wp,
             break;
         case WM_KEYDOWN:
             p->resultsLastInputWasMouse = false;
+            if (wp == VK_ESCAPE)
+            {
+                SendMessageW (p->hDlg, WM_CLOSE, 0, 0);
+                return 0;
+            }
+            if (wp == VK_TAB)
+            {
+                bool shift = (GetKeyState (VK_SHIFT) & 0x8000) != 0;
+                cycleBrowseSelection (p, shift ? -1 : +1);
+                return 0;  // consume — don't let LB treat Tab as a char
+            }
+            if (wp == VK_DOWN)
+            {
+                int cur = (int) SendMessageW (hwnd, LB_GETCURSEL, 0, 0);
+                if (cur < 0 && !p->results.empty())
+                {
+                    SendMessageW (hwnd, LB_SETCURSEL, 0, 0);
+                    // Fire the LBN_SELCHANGE path so the selected-match
+                    // smart search logic runs (mirrors what a click does).
+                    SendMessageW (GetParent (hwnd), WM_COMMAND,
+                                  MAKEWPARAM (GetDlgCtrlID (hwnd), LBN_SELCHANGE),
+                                  (LPARAM) hwnd);
+                    return 0;
+                }
+            }
+            if (wp == VK_RETURN)
+            {
+                // Enter = "confirm current match and search library now"
+                // (same behavior as a mouse click, not the debounced keyboard
+                // path). Lets keyboard users stop any in-flight debounce and
+                // jump straight to the library search.
+                int cur = (int) SendMessageW (hwnd, LB_GETCURSEL, 0, 0);
+                if (cur >= 0 && cur < (int) p->results.size()
+                    && !p->smartSearchPending)
+                {
+                    p->lastSmartSearchTitle.clear();
+                    p->lastSmartSearchArtist.clear();
+                    p->triggerBrowserSearch (p->results[cur]);
+                }
+                return 0;
+            }
             break;
+        case WM_GETDLGCODE:
+            // Ask Windows to route Tab through WM_KEYDOWN to us instead of
+            // treating it as a dialog-navigation key (we aren't a dialog,
+            // but some listbox paths still consume Tab otherwise).
+            return DLGC_WANTTAB | DLGC_WANTARROWS | DLGC_WANTCHARS
+                   | DefSubclassProc (hwnd, msg, wp, lp);
         case WM_NCDESTROY:
             RemoveWindowSubclass (hwnd, resultsListSubclassProc, uIdSubclass);
             break;
@@ -343,11 +450,132 @@ static LRESULT CALLBACK browseHoverSubclassProc (HWND hwnd, UINT msg, WPARAM wp,
         hideHoverPopup (p);
         break;
 
+    case WM_KEYDOWN:
+        if (wp == VK_ESCAPE)
+        {
+            SendMessageW (p->hDlg, WM_CLOSE, 0, 0);
+            return 0;
+        }
+        if (wp == VK_TAB)
+        {
+            bool shift = (GetKeyState (VK_SHIFT) & 0x8000) != 0;
+            cycleBrowseSelection (p, shift ? -1 : +1);
+            return 0;
+        }
+        if (wp == VK_RETURN)
+        {
+            // Enter on the browse list = ADD (playlist_add). Mirrors what
+            // the ADD button does via left click.
+            if (p->selectedBrowseIdx >= 0
+                && p->selectedBrowseIdx < (int) p->browseItems.size())
+            {
+                p->addSelectedBrowseToAutomix();
+            }
+            return 0;
+        }
+        break;
+
+    case WM_GETDLGCODE:
+        return DLGC_WANTTAB | DLGC_WANTARROWS | DLGC_WANTCHARS
+               | DefSubclassProc (hwnd, msg, wp, lp);
+
     case WM_NCDESTROY:
         RemoveWindowSubclass (hwnd, browseHoverSubclassProc, uIdSubclass);
         break;
     }
 
+    return DefSubclassProc (hwnd, msg, wp, lp);
+}
+
+// Subclass for the ADD button — left click falls through to the normal
+// WM_COMMAND handler (playlist_add); right click invokes sidelist_add via
+// addSelectedBrowseToAutomix("sidelist_add"). Also disables the normal
+// "press-state" behavior on right click so the button doesn't stick.
+static LRESULT CALLBACK addButtonSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                               UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    auto* p = reinterpret_cast<TigerTandaPlugin*> (dwRefData);
+    if (p)
+    {
+        switch (msg)
+        {
+        case WM_RBUTTONUP:
+            // Only fire when there's a valid browse selection — same gate
+            // as the left-click path.
+            if (p->selectedBrowseIdx >= 0
+                && p->selectedBrowseIdx < (int) p->browseItems.size())
+            {
+                p->addSelectedBrowseToAutomix ("sidelist_add");
+            }
+            return 0;
+        case WM_RBUTTONDOWN:
+            // Consume so Windows doesn't try to do anything with it
+            return 0;
+        case WM_NCDESTROY:
+            RemoveWindowSubclass (hwnd, addButtonSubclassProc, uIdSubclass);
+            break;
+        }
+    }
+    return DefSubclassProc (hwnd, msg, wp, lp);
+}
+
+// Subclass for the candidates listbox: Tab cycles the browse result rows
+// (just like the matches + browse listboxes) so the keyboard flow stays
+// consistent — user lands on a candidate, Tab-walks the top library hits.
+static LRESULT CALLBACK candidatesListSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                                    UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    auto* p = reinterpret_cast<TigerTandaPlugin*> (dwRefData);
+    if (p)
+    {
+        switch (msg)
+        {
+        case WM_KEYDOWN:
+            if (wp == VK_ESCAPE)
+            {
+                SendMessageW (p->hDlg, WM_CLOSE, 0, 0);
+                return 0;
+            }
+            if (wp == VK_TAB)
+            {
+                bool shift = (GetKeyState (VK_SHIFT) & 0x8000) != 0;
+                cycleBrowseSelection (p, shift ? -1 : +1);
+                return 0;
+            }
+            break;
+        case WM_GETDLGCODE:
+            return DLGC_WANTTAB | DLGC_WANTARROWS | DLGC_WANTCHARS
+                   | DefSubclassProc (hwnd, msg, wp, lp);
+        case WM_NCDESTROY:
+            RemoveWindowSubclass (hwnd, candidatesListSubclassProc, uIdSubclass);
+            break;
+        }
+    }
+    return DefSubclassProc (hwnd, msg, wp, lp);
+}
+
+// Subclass for the title / artist / year edit controls — forwards Escape
+// to the dialog so the key closes the window even when focus is in a
+// search field. Everything else (Tab, arrows, typing) goes through the
+// default edit-control handling.
+static LRESULT CALLBACK editEscapeSubclassProc (HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                                UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    auto* p = reinterpret_cast<TigerTandaPlugin*> (dwRefData);
+    if (p && msg == WM_KEYDOWN && wp == VK_ESCAPE)
+    {
+        SendMessageW (p->hDlg, WM_CLOSE, 0, 0);
+        return 0;
+    }
+    if (msg == WM_GETDLGCODE && p)
+    {
+        // Let the edit control handle chars/tab itself, but also ensure
+        // it forwards VK_ESCAPE to us via WM_KEYDOWN.
+        return DLGC_WANTCHARS | DLGC_WANTARROWS
+               | DefSubclassProc (hwnd, msg, wp, lp);
+    }
+    if (msg == WM_NCDESTROY)
+        RemoveWindowSubclass (hwnd, editEscapeSubclassProc, uIdSubclass);
     return DefSubclassProc (hwnd, msg, wp, lp);
 }
 
@@ -501,21 +729,24 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
     int px = r.left + DETAIL_PAD_X;
     int py = r.top + DETAIL_PAD_Y;
     const int rightEdge = r.right - DETAIL_PAD_X;
-    const int titleH = 16;
-    const int lineH  = 15;
+    const int titleH = 18;
+    const int lineH  = 18;
+    // DT_NOCLIP is important here: drawText (→ DrawTextW) otherwise clips to
+    // the passed RECT, which chops descenders (g, y, p) off rows sized tight
+    // to the font height. With DT_NOCLIP the glyph paints in full.
+    const UINT rowFlags = DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOCLIP;
 
     // Row 1: Track title (bold, bright — same size as body)
     RECT rTitle { px, py, rightEdge, py + titleH };
     drawText (hdc, rTitle, rec.title, TCol::textBright, fontTitle,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOCLIP);
     py += titleH + DETAIL_ROW_GAP;
 
     // Row 2: Bandleader · Singer
     std::wstring line2 = rec.bandleader;
     if (!rec.singer.empty()) { if (!line2.empty()) line2 += L"  \u00B7  "; line2 += rec.singer; }
     RECT r2 { px, py, rightEdge, py + lineH };
-    drawText (hdc, r2, line2, TCol::textNormal, fontBody,
-              DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+    drawText (hdc, r2, line2, TCol::textNormal, fontBody, rowFlags);
     py += lineH + DETAIL_ROW_GAP;
 
     // Row 3: Date · Genre
@@ -524,8 +755,7 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
     if (!dateStr.empty())   line3 += dateStr;
     if (!rec.genre.empty()) { if (!line3.empty()) line3 += L"  \u00B7  "; line3 += rec.genre; }
     RECT r3 { px, py, rightEdge, py + lineH };
-    drawText (hdc, r3, line3, TCol::textDim, fontBody,
-              DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+    drawText (hdc, r3, line3, TCol::textDim, fontBody, rowFlags);
     py += lineH + DETAIL_ROW_GAP;
 
     // Row 4: Label
@@ -533,8 +763,7 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
     {
         std::wstring line4 = L"Label: " + rec.label;
         RECT r4 { px, py, rightEdge, py + lineH };
-        drawText (hdc, r4, line4, TCol::textDim, fontBody,
-                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        drawText (hdc, r4, line4, TCol::textDim, fontBody, rowFlags);
     }
     py += lineH + DETAIL_ROW_GAP;
 
@@ -543,8 +772,7 @@ static void drawResultDetailBox (HDC hdc, RECT r, const TgRecord& rec,
     {
         std::wstring line5 = L"Group: " + rec.grouping;
         RECT r5 { px, py, rightEdge, py + lineH };
-        drawText (hdc, r5, line5, TCol::textDim, fontBody,
-                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        drawText (hdc, r5, line5, TCol::textDim, fontBody, rowFlags);
     }
 }
 
@@ -791,49 +1019,67 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         int sy = TOP_H + PAD;
 
         const int colGap2 = 4;
+        // Two-column grid (used by OTHER and by the year row).
         const int colW   = (lw - colGap2) / 2;
         const int lCol   = lx;
         const int rCol   = lx + colW + colGap2;
 
-        // Sub-group 1: ARTISTS — single row [ARTIST][SINGER]
+        // Three-column grid (used by the DEFAULTS row: ARTIST / SINGER / GENRE).
+        const int col3W  = (lw - colGap2 * 2) / 3;
+        const int c1     = lx;
+        const int c2     = lx + col3W + colGap2;
+        const int c3     = lx + (col3W + colGap2) * 2;
+
+        // Sub-group 1: DEFAULTS — single row [ARTIST][SINGER][GENRE].
+        // GENRE is promoted from the OTHER section into this "always on by
+        // default" row alongside ARTIST and SINGER.
         p->settingsArtistsHeaderY = sy;
         sy += subHdrH + subHdrPad;
-        MoveWindow (p->hChkArtist, lCol, sy, colW, btnH, FALSE);
-        MoveWindow (p->hChkSinger, rCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkArtist, c1, sy, col3W, btnH, FALSE);
+        MoveWindow (p->hChkSinger, c2, sy, col3W, btnH, FALSE);
+        MoveWindow (p->hChkGenre,  c3, sy, col3W, btnH, FALSE);
         sy += btnH + rowGap;
         sy += subGroupGap;
 
-        // Sub-group 2: YEAR RANGE — unchanged (toggle full-width row 1,
-        // spinner right-anchored row 2).
-        p->settingsYearHeaderY = sy;
-        sy += subHdrH + subHdrPad;
+        // Sub-group 2: YEAR — single row, no section header. The YEAR
+        // checkbox renders on the left; the spinner (− / ±N / +) sits
+        // directly next to it rather than being right-anchored, so the
+        // pair reads as one control group.
+        p->settingsYearHeaderY = 0;  // header suppressed; kept for parity
 
         const int spinBtnW = 20;
         const int spinLabelW = 46;
-        const int spinGroupW = spinBtnW * 2 + spinLabelW + 2;
-        int spinX = lx + lw - spinGroupW;              // right-anchored
 
-        MoveWindow (p->hBtnYearToggle, lx, sy, lw, btnH, FALSE);
-        sy += btnH + rowGap;
+        // YEAR checkbox width = 4 (left inset) + 18 (glyph) + 4 (gap)
+        //                     + "YEAR" text width + 4 (right margin).
+        // The filter-checkbox draw (see WM_DRAWITEM) uses glyph col 4..22
+        // and label col starting at 26. "YEAR" in fontBold ≈ 36px, so 72
+        // leaves ~10px slack without looking loose.
+        const int yearChkW    = 72;
+        const int yearSpinGap = 8;
+
+        int yearChkX = lCol;
+        int spinX    = yearChkX + yearChkW + yearSpinGap;
+
+        MoveWindow (p->hBtnYearToggle, yearChkX, sy, yearChkW,   btnH,     FALSE);
         MoveWindow (p->hBtnYearMinus,  spinX,                                   sy + 1, spinBtnW,   btnH - 2, FALSE);
         MoveWindow (p->hBtnYearRange,  spinX + spinBtnW + 1,                    sy + 1, spinLabelW, btnH - 2, FALSE);
         MoveWindow (p->hBtnYearPlus,   spinX + spinBtnW + 1 + spinLabelW + 1,   sy + 1, spinBtnW,   btnH - 2, FALSE);
         sy += btnH + rowGap;
         sy += subGroupGap;
 
-        // Sub-group 3: OTHER — 3 rows of 2 cols
-        //   Row 1: [GROUPING][GENRE]
-        //   Row 2: [ORCHESTRA][LABEL]
-        //   Row 3: [TRACK] alone (right col empty)
+        // Sub-group 3: OTHER — 2 rows of 2 cols.
+        //   Row 1: [LABEL][GROUPING]
+        //   Row 2: [ORCHESTRA][TRACK]
+        // GENRE moved to DEFAULTS above; with 4 items we're back to a clean
+        // 2x2 grid.
         p->settingsOtherHeaderY = sy;
         sy += subHdrH + subHdrPad;
-        MoveWindow (p->hChkGrouping,  lCol, sy, colW, btnH, FALSE);
-        MoveWindow (p->hChkGenre,     rCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkLabel,     lCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkGrouping,  rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
         MoveWindow (p->hChkOrchestra, lCol, sy, colW, btnH, FALSE);
-        MoveWindow (p->hChkLabel,     rCol, sy, colW, btnH, FALSE);
-        sy += btnH + rowGap;
-        MoveWindow (p->hChkTrack,     lCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkTrack,     rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
 
         // Logo fills the remaining vertical space between the last filter
@@ -908,6 +1154,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
         ShowWindow (hwnd, SW_HIDE);
         return 0;
+
+    // ── Escape at the window level (falls through when a child consumed it) ─
+    // Children that want to block this can return from their own WM_KEYDOWN.
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE)
+        {
+            SendMessageW (hwnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
+        break;
 
     // ── Show/hide state sync ─────────────────────────────────────────────────
     case WM_SHOWWINDOW:
@@ -1076,12 +1332,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hBtnPrelisten = mkBtn (IDC_BTN_PRELISTEN, L"\u25B6");  // ▶
         p->hBtnAddEnd    = mkBtn (IDC_BTN_ADD_END,   L"ADD");
 
-        // Initial enable state: nothing selected yet in the browse list,
-        // so Prelisten / ADD are disabled until a user selects something.
-        // Owner-draw handlers already dim the visuals based on state —
-        // this call actually blocks the clicks too.
-        EnableWindow (p->hBtnPrelisten, FALSE);
-        EnableWindow (p->hBtnAddEnd,    FALSE);
+        // ADD / Prelisten are intentionally NOT EnableWindow(FALSE)'d.
+        // Disabled controls don't receive WM_MOUSEMOVE, which means:
+        //   • TTF_SUBCLASS tooltips would never trigger on them
+        //   • Right-click on ADD couldn't reach addButtonSubclassProc
+        // Owner-draw dims them via `hasSel`; the WM_COMMAND handlers no-op
+        // when the browse selection is invalid.
 
         // Tooltips for all buttons
         p->hTooltip = CreateWindowExW (0, TOOLTIPS_CLASS, nullptr,
@@ -1091,8 +1347,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                        hwnd, nullptr, nullptr, nullptr);
         if (p->hTooltip)
         {
-            SendMessageW (p->hTooltip, TTM_SETMAXTIPWIDTH, 0, 220);
-            SendMessageW (p->hTooltip, TTM_SETDELAYTIME, TTDT_INITIAL, 2000);
+            SendMessageW (p->hTooltip, TTM_SETMAXTIPWIDTH, 0, 260);
+            // 500ms initial delay — long enough that tooltips don't flash
+            // during fast mouse movement, short enough that a deliberate
+            // hover actually produces one.
+            SendMessageW (p->hTooltip, TTM_SETDELAYTIME, TTDT_INITIAL, 500);
 
             auto addTip = [&](HWND h, const wchar_t* tip)
             {
@@ -1107,8 +1366,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             };
 
             addTip (p->hBtnClose,        L"Close Tiger Tanda");
-            addTip (p->hBtnPrelisten,    L"Preview selected song");
-            addTip (p->hBtnAddEnd,       L"Add selected browse result to automix bottom");
+            addTip (p->hBtnPrelisten,    L"Preview selected library result (play/pause)");
+            addTip (p->hBtnAddEnd,       L"Click: add to automix bottom\nRight-click: add to sidelist");
             addTip (p->hChkArtist,       L"Filter: same bandleader / artist");
             addTip (p->hChkSinger,       L"Filter: same singer");
             addTip (p->hChkGrouping,     L"Filter: same recording period / group");
@@ -1135,6 +1394,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             SetWindowSubclass (p->hBrowseList, browseHoverSubclassProc, 1, (DWORD_PTR) p);
         if (p->hResultsList)
             SetWindowSubclass (p->hResultsList, resultsListSubclassProc, 1, (DWORD_PTR) p);
+        if (p->hCandList)
+            SetWindowSubclass (p->hCandList, candidatesListSubclassProc, 1, (DWORD_PTR) p);
+        if (p->hBtnAddEnd)
+            SetWindowSubclass (p->hBtnAddEnd, addButtonSubclassProc, 1, (DWORD_PTR) p);
+        if (p->hEditTitle)
+            SetWindowSubclass (p->hEditTitle,  editEscapeSubclassProc, 1, (DWORD_PTR) p);
+        if (p->hEditArtist)
+            SetWindowSubclass (p->hEditArtist, editEscapeSubclassProc, 1, (DWORD_PTR) p);
+        if (p->hEditYear)
+            SetWindowSubclass (p->hEditYear,   editEscapeSubclassProc, 1, (DWORD_PTR) p);
 
         // Sync year toggle text — shows "YEAR \u00B1N" when enabled, "YEAR OFF"
         // when disabled. The actual string is also recomputed on every draw
@@ -1380,8 +1649,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // ── Left column: sub-group headers only ───────────────────────
             // Sub-group Ys come from applyLayout so painted labels line up
             // exactly with their control rows.
-            drawSectionHeader (lx, p->settingsArtistsHeaderY, lw, L"ARTISTS");
-            drawSectionHeader (lx, p->settingsYearHeaderY,    lw, L"YEAR RANGE");
+            drawSectionHeader (lx, p->settingsArtistsHeaderY, lw, L"DEFAULTS");
+            // YEAR RANGE header suppressed — the YEAR checkbox + ±N spinner
+            // occupy a single row just below DEFAULTS with no sub-header.
             drawSectionHeader (lx, p->settingsOtherHeaderY,   lw, L"OTHER");
 
             // ── Tiger Tag logo (lazy-loaded on first paint) ───────────────
@@ -1453,16 +1723,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                  L"\u2022  Pick a candidate to lock it in",
                                  nullptr } },
                 { L"MATCHES",  { L"\u2022  Similar tracks from the CSV, filtered by your rules",
-                                 L"\u2022  Click a match to auto-search your VDJ library",
-                                 L"\u2022  Sorted by year; use YEAR RANGE to narrow further",
+                                 L"\u2022  Click / Enter / \u2193 to auto-search your VDJ library",
+                                 L"\u2022  Sorted by year; use YEAR to narrow further",
                                  nullptr } },
-                { L"BROWSER",  { L"\u2022  Click a match to search your VDJ library automatically",
-                                 L"\u2022  Top hits ranked by artist, title, year & rating",
-                                 L"\u2022  ADD appends the highlighted hit to the automix",
+                { L"BROWSER",  { L"\u2022  Top library hits ranked by artist, title, year & rating",
+                                 L"\u2022  Tab cycles through the library results",
+                                 L"\u2022  ADD \u2192 automix  \u00B7  Right-click ADD \u2192 sidelist",
                                  nullptr } },
-                { L"FILTERS",  { L"\u2022  ARTIST / SINGER / GENRE keep the tanda consistent",
-                                 L"\u2022  GROUPING / LABEL / ORCHESTRA further tighten results",
-                                 L"\u2022  YEAR RANGE limits matches to \u00B1N years of the pick",
+                { L"FILTERS",  { L"\u2022  DEFAULTS: ARTIST / SINGER / GENRE keep the tanda consistent",
+                                 L"\u2022  OTHER: LABEL / GROUPING / ORCHESTRA / TRACK tighten results",
+                                 L"\u2022  YEAR limits matches to \u00B1N years of the pick",
                                  nullptr } },
             };
             const int secGap  = 4;   // space between sections
@@ -1535,14 +1805,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             KillTimer (hwnd, TIMER_SMART_SEARCH);
             p->runSmartSearch();
             // Refresh ADD/Prelisten enable state — browseItems may have
-            // been populated (or cleared) by runSmartSearch.
-            if (p->hBtnAddEnd || p->hBtnPrelisten)
-            {
-                bool hasValidBrowseSel = (p->selectedBrowseIdx >= 0
-                                          && p->selectedBrowseIdx < (int) p->browseItems.size());
-                if (p->hBtnAddEnd)    EnableWindow (p->hBtnAddEnd,    hasValidBrowseSel);
-                if (p->hBtnPrelisten) EnableWindow (p->hBtnPrelisten, hasValidBrowseSel);
-            }
+            // been populated (or cleared) by runSmartSearch. ADD / Prelisten
+            // stay always-enabled (see WM_CREATE comment) — just repaint so
+            // their owner-draw dim/bright state tracks the new browse state.
+            if (p->hBtnAddEnd)    InvalidateRect (p->hBtnAddEnd,    nullptr, FALSE);
+            if (p->hBtnPrelisten) InvalidateRect (p->hBtnPrelisten, nullptr, FALSE);
             return 0;
         }
 
@@ -1753,10 +2020,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     if (p->hBrowseList)
                         SendMessageW (p->hBrowseList, LB_RESETCONTENT, 0, 0);
                 }
-                // Browse list just got cleared — ADD / Prelisten should
-                // become non-clickable until the new search repopulates.
-                if (p->hBtnAddEnd)    EnableWindow (p->hBtnAddEnd,    FALSE);
-                if (p->hBtnPrelisten) EnableWindow (p->hBtnPrelisten, FALSE);
+                // Browse list just got cleared — ADD / Prelisten visually
+                // dim via their owner-draw `hasSel` check. They stay always-
+                // enabled so tooltips + right-click keep working (see
+                // WM_CREATE note).
+                if (p->hBtnAddEnd)    InvalidateRect (p->hBtnAddEnd,    nullptr, FALSE);
+                if (p->hBtnPrelisten) InvalidateRect (p->hBtnPrelisten, nullptr, FALSE);
                 p->syncBrowseListVisibility();
 
                 // Fire the search: mouse click → immediate, keyboard → debounced.
@@ -1845,10 +2114,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 {
                     p->selectedBrowseIdx = sel;
                     InvalidateRect (p->hBrowseList, nullptr, FALSE);
-                    // Actually enable ADD/Prelisten (also repaints their
-                    // owner-draw visuals to reflect the new state).
-                    if (p->hBtnAddEnd)    EnableWindow (p->hBtnAddEnd,    TRUE);
-                    if (p->hBtnPrelisten) EnableWindow (p->hBtnPrelisten, TRUE);
+                    // Buttons stay always-enabled for tooltips + right-click;
+                    // repaint so their owner-draw `hasSel` branch picks the
+                    // active (non-dim) color.
                     if (p->hBtnAddEnd)    InvalidateRect (p->hBtnAddEnd,    nullptr, FALSE);
                     if (p->hBtnPrelisten) InvalidateRect (p->hBtnPrelisten, nullptr, FALSE);
 
@@ -2035,10 +2303,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Filter toggle buttons — flat left-aligned checkbox style:
             // ☑/☐ glyph + label, no background highlight, accent-colored
             // check + bold label when on, dim glyph + normal label when off.
+            // IDC_BTN_YEAR_TOGGLE is now drawn with the same checkbox style
+            // so the Settings tab reads as a single, consistent filter grid.
             if (di->CtlID == IDC_CHK_SAME_ARTIST    || di->CtlID == IDC_CHK_SAME_SINGER   ||
                 di->CtlID == IDC_CHK_SAME_GROUPING  || di->CtlID == IDC_CHK_SAME_GENRE    ||
                 di->CtlID == IDC_CHK_SAME_ORCHESTRA  || di->CtlID == IDC_CHK_SAME_LABEL   ||
-                di->CtlID == IDC_CHK_SAME_TRACK)
+                di->CtlID == IDC_CHK_SAME_TRACK     || di->CtlID == IDC_BTN_YEAR_TOGGLE)
             {
                 bool isOn = false;
                 switch (di->CtlID)
@@ -2050,9 +2320,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     case IDC_CHK_SAME_ORCHESTRA: isOn = p->filterSameOrchestra; break;
                     case IDC_CHK_SAME_LABEL:     isOn = p->filterSameLabel;     break;
                     case IDC_CHK_SAME_TRACK:     isOn = p->filterSameTrack;     break;
+                    case IDC_BTN_YEAR_TOGGLE:    isOn = p->filterUseYearRange;  break;
                 }
                 wchar_t ftxt[64] = {};
-                GetWindowTextW (di->hwndItem, ftxt, 64);
+                // YEAR button label is kept stable (just "YEAR") so the
+                // checkbox glyph communicates on/off — the adjacent spinner
+                // shows the current ±N value.
+                if (di->CtlID == IDC_BTN_YEAR_TOGGLE)
+                    wcscpy_s (ftxt, L"YEAR");
+                else
+                    GetWindowTextW (di->hwndItem, ftxt, 64);
 
                 bool hovered = p->hoveredBtn == di->hwndItem
                                || (di->itemState & ODS_HOTLIGHT) != 0;
@@ -2126,15 +2403,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 else
                 { bg = TCol::buttonDisabled; fg = TCol::textDim; }
             }
-            else if (di->CtlID == IDC_BTN_YEAR_TOGGLE)
-            {
-                bg = p->filterUseYearRange ? TCol::filterActive : TCol::buttonBg;
-                fg = p->filterUseYearRange ? TCol::textBright   : TCol::textDim;
-            }
+            // IDC_BTN_YEAR_TOGGLE is handled by the checkbox branch above —
+            // never reaches this generic path.
             else if (di->CtlID == IDC_BTN_YEAR_RANGE)
             {
-                bg = p->filterUseYearRange ? TCol::filterActive : TCol::buttonBg;
-                fg = p->filterUseYearRange ? TCol::textBright   : TCol::textDim;
+                // No orange fill anymore: the orange ☑ checkmark on the YEAR
+                // toggle is the sole "active" indicator. Keep the ±N label
+                // on a neutral button background, with accent-colored text
+                // when enabled so the value still reads as active.
+                bg = TCol::buttonBg;
+                fg = p->filterUseYearRange ? TCol::accentBrt : TCol::textDim;
             }
 
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
