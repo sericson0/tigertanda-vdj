@@ -564,10 +564,30 @@ void TigerTandaPlugin::runSmartSearch()
             }
         }
 
-        double starsVal  = vdjGetValue ("get_browsed_song 'stars'");
-        double playVal   = vdjGetValue ("get_browsed_song 'playcount'");
-        int    stars     = (int) starsVal;
-        int    playCount = (int) playVal;
+        // Rating & playcount come back as STRING properties on this VDJ
+        // version — vdjGetValue (numeric GetInfo) silently returns 0 for
+        // both, so the old code showed every row as "no rating / 0 plays".
+        // Read as strings and parse. VDJ stores rating internally on a
+        // 0-100 scale (0, 20, 40, 60, 80, 100 = 0-5 stars) but some
+        // property getters return the 0-5 form directly, so handle both.
+        // The documented property name is 'rating'; 'stars' used to be
+        // queried here but returns empty on current VDJ builds.
+        auto parseIntLoose = [] (const std::wstring& s) -> int {
+            int n = 0; bool any = false;
+            for (wchar_t c : s)
+            {
+                if (c >= L'0' && c <= L'9') { n = n * 10 + (c - L'0'); any = true; }
+                else if (any) break;
+            }
+            return any ? n : 0;
+        };
+
+        int rating   = parseIntLoose (vdjGetString ("get_browsed_song 'rating'"));
+        int playCount = parseIntLoose (vdjGetString ("get_browsed_song 'playcount'"));
+
+        // Normalize rating: VDJ's 0-100 scale → 0-5 stars. Anything already
+        // in 0-5 range passes through; >5 is treated as the 0-100 form.
+        int stars = (rating > 5) ? (rating + 10) / 20 : rating;
         if (stars < 0) stars = 0;
         if (stars > 5) stars = 5;
         if (playCount < 0) playCount = 0;

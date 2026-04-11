@@ -93,6 +93,36 @@ static std::wstring parentFolderFromPath (const std::wstring& path)
     return (slash == std::wstring::npos) ? std::wstring() : path.substr (0, slash);
 }
 
+// Collapse the current user's profile directory prefix (e.g.
+// "C:\Users\seric") to "~" and normalize backslashes to forward slashes
+// for the remainder — so "C:\Users\seric\Music\Tango\foo" becomes
+// "~/Music/Tango/foo". Paths outside the profile are returned unchanged.
+static std::wstring shortenUserProfilePath (const std::wstring& path)
+{
+    if (path.empty()) return {};
+
+    wchar_t userProfile[MAX_PATH] = {};
+    DWORD len = GetEnvironmentVariableW (L"USERPROFILE", userProfile, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH)
+        return path;
+
+    size_t ulen = (size_t) len;
+    if (path.size() <= ulen)
+        return path;
+
+    // Case-insensitive prefix match, Windows path style. Require the
+    // char right after the prefix to be a slash so we don't collapse
+    // "C:\Users\sericOther" into "~Other".
+    if (_wcsnicmp (path.c_str(), userProfile, ulen) != 0)
+        return path;
+    if (path[ulen] != L'\\' && path[ulen] != L'/')
+        return path;
+
+    std::wstring rest = path.substr (ulen);
+    for (wchar_t& c : rest) if (c == L'\\') c = L'/';
+    return L"~" + rest;
+}
+
 // Build a 5-star visual: filled stars for bi.stars, hollow for the rest.
 // Uses ASCII ★ ☆ (BMP characters, safe for MSVC).
 static std::wstring buildStarString (int stars)
@@ -154,7 +184,9 @@ static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
     // would otherwise collapse with ellipsis and hide WHERE the file lives.
     // DT_WORDBREAK lets the renderer break on spaces / backslashes; the
     // 2-line slot prevents the popup from growing unpredictably tall.
-    std::wstring folder = parentFolderFromPath (bi.filePath);
+    // shortenUserProfilePath collapses "C:\Users\<me>\..." to "~/..." so
+    // the interesting part of the path fits without wrapping in most cases.
+    std::wstring folder = shortenUserProfilePath (parentFolderFromPath (bi.filePath));
     RECT r2 { client.left + padX, y, client.right - padX, y + lineH * 2 };
     drawText (hdc, r2,
               folder.empty() ? kDash : folder,
@@ -163,10 +195,13 @@ static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
               DT_LEFT | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
     y += lineH * 2 + 1;
 
-    // Row 3: Album name (small — matches filename size)
+    // Row 3: Album name, prefixed with "Album: " so it's unambiguous
+    // alongside the filename/folder rows above.
     RECT r3 { client.left + padX, y, client.right - padX, y + lineH };
-    drawText (hdc, r3,
-              bi.album.empty() ? kDash : bi.album,
+    std::wstring albumText = bi.album.empty()
+        ? (L"Album: " + kDash)
+        : (L"Album: " + bi.album);
+    drawText (hdc, r3, albumText,
               bi.album.empty() ? TCol::textDim : TCol::textBright,
               p->fontSmall,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
@@ -1753,14 +1788,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             static const HowSection kSections[] = {
                 { L"TRACK",    { L"\u2022  Browse a track in VDJ \u2014 Tiger Tanda identifies it",
                                  L"\u2022  Or type title / artist to search the metadata CSV",
-                                 L"\u2022  Pick a candidate to lock it in",
+                                 L"\u2022  First match auto-confirms; pick another if needed",
                                  nullptr } },
                 { L"MATCHES",  { L"\u2022  Similar tracks from the CSV, filtered by your rules",
-                                 L"\u2022  Click / Enter / \u2193 to auto-search your VDJ library",
-                                 L"\u2022  Sorted by year; use YEAR to narrow further",
+                                 L"\u2022  \u2193 / Enter / click \u2192 search your VDJ library",
+                                 L"\u2022  Sorted by year; tweak YEAR to widen or narrow",
                                  nullptr } },
-                { L"BROWSER",  { L"\u2022  Top library hits ranked by artist, title, year & rating",
-                                 L"\u2022  Tab cycles through the library results",
+                { L"BROWSER",  { L"\u2022  Top library hits scored on artist, title, year & rating",
+                                 L"\u2022  Tab cycles rows; hover for filename / folder / album",
                                  L"\u2022  ADD \u2192 automix  \u00B7  Right-click ADD \u2192 sidelist",
                                  nullptr } },
                 { L"FILTERS",  { L"\u2022  DEFAULTS: ARTIST / SINGER / GENRE keep the tanda consistent",
