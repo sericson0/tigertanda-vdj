@@ -236,9 +236,10 @@ public:
     // Settings tab header/logo Ys — computed in applyLayout so WM_PAINT can
     // align painted sub-group headers with the control rows without
     // duplicating the layout math.
-    int  settingsArtistsHeaderY = 0;
-    int  settingsYearHeaderY    = 0;
-    int  settingsOtherHeaderY   = 0;
+    int  settingsMainHeaderY    = 0;  // "FILTERS" — main left-column header
+    int  settingsArtistsHeaderY = 0;  // "DEFAULTS" sub-header
+    int  settingsYearHeaderY    = 0;  // (unused — year row has no sub-header)
+    int  settingsOtherHeaderY   = 0;  // "OTHER" sub-header
     int  settingsLogoY          = 0;
     int  settingsLogoH          = 0;
 

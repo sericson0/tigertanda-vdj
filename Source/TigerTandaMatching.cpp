@@ -226,11 +226,9 @@ void TigerTandaPlugin::triggerBrowserSearch (const TgRecord& rec)
     lastSmartSearchTitle  = rec.title;
     lastSmartSearchArtist = rec.bandleader;
 
-    // Save the user's current folder so we can restore it afterwards.
-    // Only save when we don't already have one stashed — if a previous
-    // search cycle is still in flight (user clicked FIND IN VDJ again),
-    // VDJ's current view is a search-results state and reading it would
-    // clobber the real folder we need to restore to.
+    // Save the user's current folder so runSmartSearch can restore it
+    // after enumeration completes. If a previous cycle is still in flight
+    // (savedBrowseFolder already populated), leave it alone.
     if (savedBrowseFolder.empty())
     {
         std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
@@ -299,135 +297,116 @@ void TigerTandaPlugin::addSelectedBrowseToAutomix (const char* vdjCommand)
         return;
 
     const BrowseItem& bi = browseItems[selectedBrowseIdx];
-    // We deliberately DON'T gate on bi.browserIndex here — the new path-
-    // based scan doesn't need it, and gating would wrongly reject items
-    // from a smart-search that never ran enumeration.
     if (bi.filePath.empty())
         return;
 
-    // Lock polling for the entire cycle.
     smartSearchPending = true;
 
-    // Save current folder only if we don't already have one stashed.
-    if (savedBrowseFolder.empty())
+    // Capture the user's current folder so we can restore it on the
+    // fallback path. The fast path doesn't touch the browser, so this
+    // is only used if attempt 0b runs.
+    std::wstring userFolder;
     {
         std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
         if (!curFolder.empty())
-            savedBrowseFolder = curFolder;
+            userFolder = curFolder;
+        else if (!savedBrowseFolder.empty())
+            userFolder = savedBrowseFolder;
     }
-
-    // Re-issue the exact same query the smart search used. VDJ's result
-    // ordering is stable for the same query, but we DON'T rely on that —
-    // we find the target by filepath below.
-    vdjSend ("browser_window 'songs'");
-    vdjSend ("search \"" + toUtf8 (lastBrowserSearchQuery) + "\"");
-
-    // Wait up to 2 seconds for VDJ to populate search results.
-    int waited = 0;
-    int count = 0;
-    while (waited < 2000)
-    {
-        Sleep (50);
-        waited += 50;
-        count = (int) vdjGetValue ("file_count");
-        if (count > 0) break;
-    }
-    if (count == 0)
-    {
-        if (!savedBrowseFolder.empty())
-        {
-            vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
-            Sleep (20);
-            savedBrowseFolder.clear();
-        }
-        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
-        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
-        smartSearchPending = false;
-        return;
-    }
-
-    // After `search` VDJ focus may still be in the search input box. Force
-    // focus back to the songs pane so browser_scroll operates on the
-    // result list and not the search entry.
-    vdjSend ("browser_window 'songs'");
-    Sleep (50);
-
-    // Let VDJ settle after results populate. The polling loop above
-    // returns as soon as file_count > 0, which may be before VDJ has
-    // finished positioning its cursor; a short settle avoids racing the
-    // first `get_browsed_filepath` call.
-    Sleep (100);
-
-    // Path-based scan: scroll from top, compare filepath each row, stop
-    // when we match `bi.filePath`. This is bulletproof against any cursor-
-    // position weirdness — we explicitly read and verify each row.
-    vdjSend ("browser_scroll 'top'");
-    Sleep (60);
 
     auto currentPath = [this] () {
         return vdjGetString ("get_browsed_filepath");
     };
 
+    auto restoreAndUnlock = [&] () {
+        if (!userFolder.empty())
+        {
+            vdjSend ("browser_gotofolder \"" + toUtf8 (userFolder) + "\"");
+            Sleep (40);
+        }
+        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+        smartSearchPending = false;
+    };
+
+    int automixBefore = (int) vdjGetValue ("file_count automix");
+
+    // ── Attempt A (fast path): playlist_add "<full path>" ──
+    //
+    // VDJ's playlist_add (and sidelist_add) accept a filepath argument,
+    // so the fast path is a single command + count check. No browser
+    // navigation, so ADD is ~instant regardless of folder size. We infer
+    // success from `file_count automix` growth — get_automix_song
+    // 'filepath' N is a no-op in plugin context on this VDJ version.
+    {
+        std::string pathCmd = std::string (vdjCommand)
+                            + " \"" + toUtf8 (bi.filePath) + "\"";
+        vdjSend (pathCmd);
+        Sleep (200);
+
+        int afterA = (int) vdjGetValue ("file_count automix");
+        if (afterA > automixBefore)
+        {
+            restoreAndUnlock();
+            return;
+        }
+    }
+
+    // ── Attempt 0b (slow fallback): browser_gotofolder parent + scroll-scan ──
+    //
+    // If the fast path failed for any reason, fall back to the documented
+    // approach: navigate to the file's parent folder, scroll-scan for the
+    // exact filepath, then fire the no-arg command on the parked row.
+    // Physical folders have stable ordering so this is reliable — just
+    // slow (one browser_scroll +1 per row).
+    size_t lastSlash = bi.filePath.find_last_of (L"\\/");
+    if (lastSlash == std::wstring::npos)
+    {
+        restoreAndUnlock();
+        return;
+    }
+
+    std::wstring parentFolder = bi.filePath.substr (0, lastSlash);
+    vdjSend ("browser_gotofolder \"" + toUtf8 (parentFolder) + "\"");
+    Sleep (400);
+    vdjSend ("browser_window 'songs'");
+    Sleep (60);
+
+    int folderCount = (int) vdjGetValue ("file_count");
+    if (folderCount <= 0)
+    {
+        restoreAndUnlock();
+        return;
+    }
+
+    vdjSend ("browser_scroll 'top'");
+    Sleep (80);
+
+    int scanLimit = folderCount > 1000 ? 1000 : folderCount;
     bool found = false;
-    // Hard cap at min(count, 200) so we don't spin forever if file_count
-    // reports a huge number (some VDJ views will).
-    int scanLimit = (count > 200) ? 200 : count;
     for (int k = 0; k < scanLimit; ++k)
     {
-        if (pathEq (currentPath(), bi.filePath)) { found = true; break; }
+        if (pathEq (currentPath(), bi.filePath))
+        {
+            found = true;
+            break;
+        }
         vdjSend ("browser_scroll +1");
-        Sleep (15);
-    }
-
-    if (!found)
-    {
-        // Couldn't locate the recorded file in the live search results —
-        // abort rather than add the wrong one. Restore folder and bail.
-        if (!savedBrowseFolder.empty())
-        {
-            vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
-            Sleep (20);
-            savedBrowseFolder.clear();
-        }
-        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
-        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
-        smartSearchPending = false;
-        return;
-    }
-
-    // Final sanity check immediately before firing the add command —
-    // catches any state shift between the scan loop and this line.
-    if (!pathEq (currentPath(), bi.filePath))
-    {
-        if (!savedBrowseFolder.empty())
-        {
-            vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
-            Sleep (20);
-            savedBrowseFolder.clear();
-        }
-        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
-        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
-        smartSearchPending = false;
-        return;
-    }
-
-    // Append to automix bottom (or sidelist, depending on vdjCommand).
-    vdjSend (vdjCommand);
-    Sleep (30);
-
-    // Restore the user's folder.
-    if (!savedBrowseFolder.empty())
-    {
-        vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
         Sleep (20);
-        savedBrowseFolder.clear();
     }
 
-    // Refresh polling baseline so the next tick sees "no change".
-    lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
-    lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+    if (found)
+    {
+        // Final verify, then fire the plain command.
+        Sleep (50);
+        if (pathEq (currentPath(), bi.filePath))
+        {
+            vdjSend (vdjCommand);
+            Sleep (300);
+        }
+    }
 
-    smartSearchPending = false;
+    restoreAndUnlock();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,6 +446,8 @@ void TigerTandaPlugin::runSmartSearch()
             SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
         syncBrowseListVisibility();
 
+        // Restore the user's saved folder so they don't get stranded on
+        // an empty search-results view.
         if (!savedBrowseFolder.empty())
         {
             vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
@@ -495,9 +476,13 @@ void TigerTandaPlugin::runSmartSearch()
     std::vector<ScoredItem> scored;
 
     // Scroll to top then read each item one by one — the correct VDJ pattern
-    // (get_browser_file does not exist; use browser_scroll + get_browsed_song)
+    // (get_browser_file does not exist; use browser_scroll + get_browsed_song).
+    // Sleeps are now much more generous (50ms after scroll) because the
+    // previous 10ms was causing read/scroll races: different get_browsed_*
+    // queries would return data from different rows in the same iteration,
+    // so the stored bi.filePath didn't match the stored bi.title.
     vdjSend ("browser_scroll 'top'");
-    Sleep (20);
+    Sleep (80);
 
     for (int i = 0; i < limit; ++i)
     {
@@ -509,12 +494,33 @@ void TigerTandaPlugin::runSmartSearch()
             return;
 
         BrowseItem bi;
-        bi.title        = vdjGetString ("get_browsed_song 'title'");
-        bi.artist       = vdjGetString ("get_browsed_song 'artist'");
-        bi.year         = vdjGetString ("get_browsed_song 'year'");
-        bi.filePath     = vdjGetString ("get_browsed_filepath");
-        bi.album        = vdjGetString ("get_browsed_song 'album'");
-        bi.comment      = vdjGetString ("get_browsed_song 'comment'");
+
+        // Bracket the read with TWO filepath reads. If they agree, VDJ's
+        // "currently browsed song" state was stable throughout the window
+        // we read the other metadata in, so the fields all belong to the
+        // same row. If they disagree, we retry with a longer wait.
+        std::wstring fpBegin, fpEnd;
+        int attempts = 0;
+        const int maxAttempts = 3;
+        for (;;)
+        {
+            fpBegin  = vdjGetString ("get_browsed_filepath");
+            bi.title  = vdjGetString ("get_browsed_song 'title'");
+            bi.artist = vdjGetString ("get_browsed_song 'artist'");
+            bi.year   = vdjGetString ("get_browsed_song 'year'");
+            bi.album  = vdjGetString ("get_browsed_song 'album'");
+            bi.comment = vdjGetString ("get_browsed_song 'comment'");
+            fpEnd    = vdjGetString ("get_browsed_filepath");
+
+            if (fpBegin == fpEnd)
+                break;
+
+            // Mid-read drift — wait longer, retry.
+            if (++attempts >= maxAttempts) break;
+            Sleep (80);
+        }
+
+        bi.filePath     = fpEnd;
         bi.browserIndex = i;
 
         if (bi.title.empty() && bi.artist.empty())
@@ -584,7 +590,12 @@ void TigerTandaPlugin::runSmartSearch()
         if (i + 1 < limit)
         {
             vdjSend ("browser_scroll +1");
-            Sleep (10);
+            // 50 ms is enough for VDJ to update its internal "browsed song"
+            // state on the hosts we've tested. 10 ms was causing the reads
+            // at the start of the next iteration to pick up data from the
+            // previous row, producing rows where title/artist matched row N
+            // but filepath pointed to row N-1.
+            Sleep (50);
         }
     }
 
@@ -625,10 +636,11 @@ void TigerTandaPlugin::runSmartSearch()
     }
     syncBrowseListVisibility();
 
-    // Return VDJ's browser to the user's saved folder. Prefer the explicit
-    // savedBrowseFolder path (set by triggerBrowserSearch) over the less
-    // precise goto_last_folder. Clear savedBrowseFolder after restoring so
-    // the next search cycle captures a fresh folder.
+    // Restore the user's saved folder so their browser view goes back
+    // to where they were. We've already captured bi.filePath for every
+    // browseItem during enumeration, so the ADD button can navigate
+    // directly to each target's parent folder on demand — no need to
+    // keep VDJ parked on the search results.
     if (!savedBrowseFolder.empty())
     {
         vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");

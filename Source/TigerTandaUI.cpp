@@ -54,20 +54,26 @@ static constexpr UINT HOVER_POPUP_DWELL_MS = 750;
 
 static const wchar_t* HOVER_POPUP_CLASS = L"TigerTandaHoverPopup";
 
-// Compute the popup size. Always renders a fixed 3-row layout so the
-// popup has a consistent footprint regardless of which fields are populated
+// Compute the popup size. Always renders a fixed layout so the popup
+// has a consistent footprint regardless of which fields are populated
 // (missing fields render as an em-dash instead of collapsing the row).
-// Rows: 1) Filename (bold small), 2) Album (small), 3) Stars + plays
-static constexpr int HOVER_POPUP_ROWS = 3;
+// Rows:
+//   1) Filename     (bold small, 1 line)
+//   2) Folder path  (small dim, up to 2 lines via DT_WORDBREAK)
+//   3) Album        (small, 1 line)
+//   4) Stars+plays  (small, 1 line)
+// Total text rows = 5 (row 2 counted twice for the wrap).
+static constexpr int HOVER_POPUP_TEXT_LINES = 5;
 static SIZE hoverPopupSize (const BrowseItem& /*bi*/)
 {
     const int lineH  = 15;
     const int padY   = 6;
     SIZE sz;
-    // Narrow so the popup fits inside the right column (right col ≈ 280px
-    // @ DLG_W=700) — stops it from spilling over the matches list on the left.
-    sz.cx = 240;
-    sz.cy = padY * 2 + HOVER_POPUP_ROWS * lineH + 2;  // +2: small gap before row 3
+    // Slightly wider than before (was 240) so folder paths are more likely
+    // to fit on 1 line — still comfortably inside the right column
+    // (right col ≈ 278px @ DLG_W=700).
+    sz.cx = 270;
+    sz.cy = padY * 2 + HOVER_POPUP_TEXT_LINES * lineH + 4;  // +4: small gaps
     return sz;
 }
 
@@ -77,6 +83,14 @@ static std::wstring fileNameFromPath (const std::wstring& path)
     if (path.empty()) return {};
     size_t slash = path.find_last_of (L"\\/");
     return (slash == std::wstring::npos) ? path : path.substr (slash + 1);
+}
+
+// Extract just the parent folder (everything up to the last slash).
+static std::wstring parentFolderFromPath (const std::wstring& path)
+{
+    if (path.empty()) return {};
+    size_t slash = path.find_last_of (L"\\/");
+    return (slash == std::wstring::npos) ? std::wstring() : path.substr (0, slash);
 }
 
 // Build a 5-star visual: filled stars for bi.stars, hollow for the rest.
@@ -135,9 +149,23 @@ static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     y += lineH;
 
-    // Row 2: Album name (small — matches filename size)
-    RECT r2 { client.left + padX, y, client.right - padX, y + lineH };
+    // Row 2: Parent folder path (dim, small, allowed to wrap to 2 lines).
+    // Long paths like "C:\Users\...\Tango music (from Peace)\Anibal Troilo"
+    // would otherwise collapse with ellipsis and hide WHERE the file lives.
+    // DT_WORDBREAK lets the renderer break on spaces / backslashes; the
+    // 2-line slot prevents the popup from growing unpredictably tall.
+    std::wstring folder = parentFolderFromPath (bi.filePath);
+    RECT r2 { client.left + padX, y, client.right - padX, y + lineH * 2 };
     drawText (hdc, r2,
+              folder.empty() ? kDash : folder,
+              folder.empty() ? TCol::textDim : TCol::textNormal,
+              p->fontSmall,
+              DT_LEFT | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
+    y += lineH * 2 + 1;
+
+    // Row 3: Album name (small — matches filename size)
+    RECT r3 { client.left + padX, y, client.right - padX, y + lineH };
+    drawText (hdc, r3,
               bi.album.empty() ? kDash : bi.album,
               bi.album.empty() ? TCol::textDim : TCol::textBright,
               p->fontSmall,
@@ -1007,72 +1035,66 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int rowGap = 1;     // tight gap between checkbox rows
         const int subGroupGap = 6;  // vertical gap between sub-groups
 
-        // ── Left column: filter sub-groups (two-column layout) ─────────
-        // Sub-group headers (ARTISTS / YEAR RANGE / OTHER) carry the
-        // filter-section meaning on their own, so no top-level header is
-        // drawn here — it would just eat vertical space that the logo and
-        // the filters need.
-        //
-        // Filters are arranged in two columns within each sub-group so the
-        // left pane is more compact, leaving the saved vertical space for a
-        // larger Tiger Tag logo below.
+        // ── Left column: FILTERS main header + sub-groups ──────────────
+        // Everything on the left is a 2-column grid. DEFAULTS gets
+        // [ARTIST][SINGER] on one row and [GENRE][YEAR + spinner] on the
+        // next. OTHER gets [LABEL][GROUPING] / [ORCHESTRA][TRACK]. The
+        // bolded "FILTERS" header sits at the top, mirroring "HOW IT WORKS"
+        // on the right.
         int sy = TOP_H + PAD;
 
         const int colGap2 = 4;
-        // Two-column grid (used by OTHER and by the year row).
-        const int colW   = (lw - colGap2) / 2;
+        const int colW   = (lw - colGap2) / 2;   // 2-column grid
         const int lCol   = lx;
         const int rCol   = lx + colW + colGap2;
 
-        // Three-column grid (used by the DEFAULTS row: ARTIST / SINGER / GENRE).
-        const int col3W  = (lw - colGap2 * 2) / 3;
-        const int c1     = lx;
-        const int c2     = lx + col3W + colGap2;
-        const int c3     = lx + (col3W + colGap2) * 2;
+        // Main header: FILTERS (drawn bold in WM_PAINT; takes ~18px).
+        const int mainHdrH = 18;
+        const int mainHdrPad = 6;   // gap below main header before first subgroup
+        p->settingsMainHeaderY = sy;
+        sy += mainHdrH + mainHdrPad;
 
-        // Sub-group 1: DEFAULTS — single row [ARTIST][SINGER][GENRE].
-        // GENRE is promoted from the OTHER section into this "always on by
-        // default" row alongside ARTIST and SINGER.
+        // Sub-group 1: DEFAULTS — [ARTIST][SINGER] (GENRE moves to year row)
         p->settingsArtistsHeaderY = sy;
         sy += subHdrH + subHdrPad;
-        MoveWindow (p->hChkArtist, c1, sy, col3W, btnH, FALSE);
-        MoveWindow (p->hChkSinger, c2, sy, col3W, btnH, FALSE);
-        MoveWindow (p->hChkGenre,  c3, sy, col3W, btnH, FALSE);
+        MoveWindow (p->hChkArtist, lCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkSinger, rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
-        sy += subGroupGap;
 
-        // Sub-group 2: YEAR — single row, no section header. The YEAR
-        // checkbox renders on the left; the spinner (− / ±N / +) sits
-        // directly next to it rather than being right-anchored, so the
-        // pair reads as one control group.
-        p->settingsYearHeaderY = 0;  // header suppressed; kept for parity
+        // Row 2 of DEFAULTS: [GENRE][YEAR + spinner]
+        //
+        // Right half of this row holds both the YEAR checkbox and its
+        // ±N spinner as one control group. We give the YEAR checkbox a
+        // fixed width (wide enough for the glyph + "YEAR" label) and
+        // squeeze the spinner into the remaining right-column space.
+        const int spinBtnW   = 20;
+        const int spinLabelW = 40;
+        const int spinGroupW = spinBtnW * 2 + spinLabelW + 2;
+        // YEAR checkbox uses the remainder of the right column minus the
+        // spinner and a small gap.
+        const int yearSpinGap = 4;
+        int yearChkW = colW - spinGroupW - yearSpinGap;
+        if (yearChkW < 48) yearChkW = 48;  // floor for glyph + "YEAR"
 
-        const int spinBtnW = 20;
-        const int spinLabelW = 46;
-
-        // YEAR checkbox width = 4 (left inset) + 18 (glyph) + 4 (gap)
-        //                     + "YEAR" text width + 4 (right margin).
-        // The filter-checkbox draw (see WM_DRAWITEM) uses glyph col 4..22
-        // and label col starting at 26. "YEAR" in fontBold ≈ 36px, so 72
-        // leaves ~10px slack without looking loose.
-        const int yearChkW    = 72;
-        const int yearSpinGap = 8;
-
-        int yearChkX = lCol;
+        int yearChkX = rCol;
         int spinX    = yearChkX + yearChkW + yearSpinGap;
 
-        MoveWindow (p->hBtnYearToggle, yearChkX, sy, yearChkW,   btnH,     FALSE);
+        MoveWindow (p->hChkGenre,      lCol,     sy, colW,     btnH,     FALSE);
+        MoveWindow (p->hBtnYearToggle, yearChkX, sy, yearChkW, btnH,     FALSE);
         MoveWindow (p->hBtnYearMinus,  spinX,                                   sy + 1, spinBtnW,   btnH - 2, FALSE);
         MoveWindow (p->hBtnYearRange,  spinX + spinBtnW + 1,                    sy + 1, spinLabelW, btnH - 2, FALSE);
         MoveWindow (p->hBtnYearPlus,   spinX + spinBtnW + 1 + spinLabelW + 1,   sy + 1, spinBtnW,   btnH - 2, FALSE);
+
+        // The settingsYearHeaderY field is unused in the new layout (year
+        // row has no sub-header) but we still reset it to keep state clean.
+        p->settingsYearHeaderY = 0;
+
         sy += btnH + rowGap;
         sy += subGroupGap;
 
-        // Sub-group 3: OTHER — 2 rows of 2 cols.
+        // Sub-group 2: OTHER — 2 rows × 2 cols.
         //   Row 1: [LABEL][GROUPING]
         //   Row 2: [ORCHESTRA][TRACK]
-        // GENRE moved to DEFAULTS above; with 4 items we're back to a clean
-        // 2x2 grid.
         p->settingsOtherHeaderY = sy;
         sy += subHdrH + subHdrPad;
         MoveWindow (p->hChkLabel,     lCol, sy, colW, btnH, FALSE);
@@ -1646,12 +1668,23 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 return y + 14 + 4;
             };
 
-            // ── Left column: sub-group headers only ───────────────────────
+            // Main header (bold, bright) — used for FILTERS on the left and
+            // HOW IT WORKS on the right. Slightly taller line, accent color
+            // so it reads as a top-level divider.
+            auto drawMainHeader = [&] (int x, int y, int w, const wchar_t* label) -> int
+            {
+                RECT hR { x, y, x + w, y + 16 };
+                drawText (hdc, hR, label, TCol::textBright, p->fontBold,
+                          DT_LEFT | DT_TOP | DT_SINGLELINE);
+                return y + 16 + 4;
+            };
+
+            // ── Left column: FILTERS main header + sub-group headers ─────
             // Sub-group Ys come from applyLayout so painted labels line up
             // exactly with their control rows.
+            drawMainHeader   (lx, p->settingsMainHeaderY,    lw, L"FILTERS");
             drawSectionHeader (lx, p->settingsArtistsHeaderY, lw, L"DEFAULTS");
-            // YEAR RANGE header suppressed — the YEAR checkbox + ±N spinner
-            // occupy a single row just below DEFAULTS with no sub-header.
+            // Year row sits next to GENRE inside DEFAULTS, no own sub-header.
             drawSectionHeader (lx, p->settingsOtherHeaderY,   lw, L"OTHER");
 
             // ── Tiger Tag logo (lazy-loaded on first paint) ───────────────
@@ -1708,7 +1741,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             // ── Right column: HOW IT WORKS (Option B — all sections) ──────
             int ry = TOP_H + PAD;
-            ry = drawSectionHeader (rx, ry, rw, L"HOW IT WORKS");
+            ry = drawMainHeader (rx, ry, rw, L"HOW IT WORKS");
             ry += 2;
 
             // Each section: dim uppercase sub-title matching the unified
@@ -2359,13 +2392,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 return TRUE;
             }
 
-            // Year range spinner (− / +) — small square buttons
+            // Year range spinner (− / +) — small square buttons.
+            // Neutral (white/normal text) colors now, not accent-orange —
+            // the YEAR checkbox's orange check mark is the sole "active"
+            // indicator so the buttons don't need to echo the state.
             if (di->CtlID == IDC_BTN_YEAR_MINUS || di->CtlID == IDC_BTN_YEAR_PLUS)
             {
                 bool active = p->filterUseYearRange;
                 bool disabledState = (di->itemState & ODS_DISABLED) != 0;
-                COLORREF sbg = (active && !disabledState) ? TCol::buttonBg : TCol::buttonDisabled;
-                COLORREF sfg = (active && !disabledState) ? TCol::accentBrt : TCol::textDim;
+                COLORREF sbg = (active && !disabledState) ? TCol::buttonBg   : TCol::buttonDisabled;
+                COLORREF sfg = (active && !disabledState) ? TCol::textBright : TCol::textDim;
                 wchar_t stxt[4] = {};
                 GetWindowTextW (di->hwndItem, stxt, 4);
                 drawOwnerButton (di, stxt, sbg, sfg, p->fontBold, p->hoveredBtn == di->hwndItem);
@@ -2407,12 +2443,11 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // never reaches this generic path.
             else if (di->CtlID == IDC_BTN_YEAR_RANGE)
             {
-                // No orange fill anymore: the orange ☑ checkmark on the YEAR
-                // toggle is the sole "active" indicator. Keep the ±N label
-                // on a neutral button background, with accent-colored text
-                // when enabled so the value still reads as active.
+                // Neutral button background; white text when enabled so the
+                // value reads clearly without introducing another orange
+                // accent. The YEAR checkmark is the only orange indicator.
                 bg = TCol::buttonBg;
-                fg = p->filterUseYearRange ? TCol::accentBrt : TCol::textDim;
+                fg = p->filterUseYearRange ? TCol::textBright : TCol::textDim;
             }
 
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)

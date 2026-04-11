@@ -489,17 +489,28 @@ static std::wstring lowerExt (const std::wstring& path)
     return ext;
 }
 
-static Bitmap* tryExtract (const std::wstring& path)
+// Try the embedded-art extractor for the given file's extension. Returns
+// nullptr if the format is unknown or the file has no embedded art.
+static Bitmap* tryEmbedded (const std::wstring& path)
 {
-    // Sidecar first — cheapest and highest visual quality when present
-    if (Bitmap* bmp = trySidecar (path)) return bmp;
-
     std::wstring ext = lowerExt (path);
     if (ext == L".mp3")                        return tryMp3  (path);
     if (ext == L".flac")                       return tryFlac (path);
     if (ext == L".aiff" || ext == L".aif")     return tryAiff (path);
     if (ext == L".m4a"  || ext == L".mp4"
         || ext == L".alac" || ext == L".m4b")  return tryMp4  (path);
+    return nullptr;
+}
+
+static Bitmap* tryExtract (const std::wstring& path)
+{
+    // Embedded first — it's per-file and always correct when present.
+    // Sidecar (folder.jpg / cover.jpg) is a per-FOLDER image: every file in
+    // the folder gets the same picture, which masks which physical file a
+    // browse row actually points to. Only fall back to sidecar when no
+    // embedded art exists.
+    if (Bitmap* bmp = tryEmbedded (path)) return bmp;
+    if (Bitmap* bmp = trySidecar  (path)) return bmp;
     return nullptr;
 }
 
