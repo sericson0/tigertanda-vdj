@@ -54,17 +54,18 @@ static constexpr UINT HOVER_POPUP_DWELL_MS = 750;
 
 static const wchar_t* HOVER_POPUP_CLASS = L"TigerTandaHoverPopup";
 
-// Compute the popup size. Always renders a fixed multi-row layout so the
+// Compute the popup size. Always renders a fixed 3-row layout so the
 // popup has a consistent footprint regardless of which fields are populated
 // (missing fields render as an em-dash instead of collapsing the row).
-static constexpr int HOVER_POPUP_ROWS = 4;  // Album, Rating, Plays, File
+// Rows: 1) Filename (bold), 2) Album, 3) Stars + plays
+static constexpr int HOVER_POPUP_ROWS = 3;
 static SIZE hoverPopupSize (const BrowseItem& /*bi*/)
 {
     const int lineH  = 18;
     const int padY   = 8;
     SIZE sz;
-    sz.cx = 280;
-    sz.cy = padY * 2 + HOVER_POPUP_ROWS * lineH;
+    sz.cx = 300;
+    sz.cy = padY * 2 + HOVER_POPUP_ROWS * lineH + 2;  // +2: small gap before row 3
     return sz;
 }
 
@@ -118,43 +119,55 @@ static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
     const int lineH = 18;
     int y = client.top + padY;
 
-    auto drawRow = [&] (const std::wstring& label, const std::wstring& value,
-                        COLORREF valueColor, HFONT valueFont)
-    {
-        // Label in dim gray, value in bright / provided color
-        RECT labelR { client.left + padX, y, client.left + padX + 60, y + lineH };
-        drawText (hdc, labelR, label, TCol::textDim, p->fontSmall,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        RECT valueR { client.left + padX + 60, y, client.right - padX, y + lineH };
-        drawText (hdc, valueR, value, valueColor, valueFont,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        y += lineH;
-    };
-
-    // Always render the same four rows so the popup has consistent size;
-    // empty/zero fields render as an em-dash instead of collapsing.
     const std::wstring kDash = L"\u2014";
 
-    drawRow (L"Album",
-             bi.album.empty() ? kDash : bi.album,
-             bi.album.empty() ? TCol::textDim : TCol::textBright,
-             p->fontNormal);
-
-    drawRow (L"Rating",
-             bi.stars > 0 ? buildStarString (bi.stars) : kDash,
-             bi.stars > 0 ? TCol::accentBrt : TCol::textDim,
-             p->fontNormal);
-
-    drawRow (L"Plays",
-             std::to_wstring (bi.playCount),
-             bi.playCount > 0 ? TCol::textBright : TCol::textDim,
-             p->fontNormal);
-
+    // Row 1: Filename (bold, bright) — no label column
     std::wstring fname = fileNameFromPath (bi.filePath);
-    drawRow (L"File",
-             fname.empty() ? kDash : fname,
-             fname.empty() ? TCol::textDim : TCol::textNormal,
-             p->fontSmall);
+    RECT r1 { client.left + padX, y, client.right - padX, y + lineH };
+    drawText (hdc, r1,
+              fname.empty() ? kDash : fname,
+              fname.empty() ? TCol::textDim : TCol::textBright,
+              p->fontBold,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    y += lineH;
+
+    // Row 2: Album name
+    RECT r2 { client.left + padX, y, client.right - padX, y + lineH };
+    drawText (hdc, r2,
+              bi.album.empty() ? kDash : bi.album,
+              bi.album.empty() ? TCol::textDim : TCol::textBright,
+              p->fontNormal,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    y += lineH + 2;  // small visual gap before the meta row
+
+    // Row 3: Stars in accent, separator + plays in dim gray, all fontSmall.
+    // Draw in three adjacent rects so we can color the segments independently.
+    std::wstring starsStr = (bi.stars > 0) ? buildStarString (bi.stars) : L"no rating";
+    std::wstring playsStr = std::to_wstring (bi.playCount) + L" plays";
+    const std::wstring sepStr = L"  \u2022  ";  // spaced middle dot
+
+    HDC mdc = hdc;  // measure with the real DC's font metrics
+    HFONT oldF = (HFONT) SelectObject (mdc, p->fontSmall);
+    SIZE szStars {}, szSep {}, szPlays {};
+    GetTextExtentPoint32W (mdc, starsStr.c_str(), (int) starsStr.size(), &szStars);
+    GetTextExtentPoint32W (mdc, sepStr.c_str(),   (int) sepStr.size(),   &szSep);
+    GetTextExtentPoint32W (mdc, playsStr.c_str(), (int) playsStr.size(), &szPlays);
+    SelectObject (mdc, oldF);
+
+    int x = client.left + padX;
+    RECT rStars { x, y, x + szStars.cx, y + lineH };
+    drawText (hdc, rStars, starsStr,
+              (bi.stars > 0) ? TCol::accentBrt : TCol::textDim,
+              p->fontSmall,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    x += szStars.cx;
+    RECT rSep { x, y, x + szSep.cx, y + lineH };
+    drawText (hdc, rSep, sepStr, TCol::textDim, p->fontSmall,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    x += szSep.cx;
+    RECT rPlays { x, y, client.right - padX, y + lineH };
+    drawText (hdc, rPlays, playsStr, TCol::textDim, p->fontSmall,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     EndPaint (popup, &ps);
 }
@@ -198,7 +211,9 @@ static void ensureHoverPopupClass (HINSTANCE hInst)
 }
 
 // Position the popup next to a screen point but clamped to the plugin
-// window's screen rect so it never extends beyond the plugin area.
+// window's screen rect so it never extends beyond the plugin area. If the
+// default below-cursor placement would clip the bottom of the plugin rect,
+// flip the popup above the cursor instead.
 static void positionHoverPopup (TigerTandaPlugin* p, HWND popup, POINT cursorScreen, SIZE sz)
 {
     if (!p || !p->hDlg) return;
@@ -206,12 +221,15 @@ static void positionHoverPopup (TigerTandaPlugin* p, HWND popup, POINT cursorScr
     GetWindowRect (p->hDlg, &pluginRect);
 
     int x = cursorScreen.x + 14;
-    int y = cursorScreen.y + 18;
+    int y;
+    if (cursorScreen.y + 18 + sz.cy <= pluginRect.bottom)
+        y = cursorScreen.y + 18;       // below cursor (default)
+    else
+        y = cursorScreen.y - sz.cy - 8; // flipped above cursor
 
-    if (x + sz.cx > pluginRect.right)  x = pluginRect.right  - sz.cx;
-    if (y + sz.cy > pluginRect.bottom) y = pluginRect.bottom - sz.cy;
-    if (x < pluginRect.left)           x = pluginRect.left;
-    if (y < pluginRect.top)            y = pluginRect.top;
+    if (x + sz.cx > pluginRect.right) x = pluginRect.right - sz.cx;
+    if (x < pluginRect.left)          x = pluginRect.left;
+    if (y < pluginRect.top)           y = pluginRect.top;
 
     SetWindowPos (popup, HWND_TOPMOST, x, y, sz.cx, sz.cy,
                   SWP_NOACTIVATE);
@@ -743,28 +761,35 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         const int rowGap = 1;     // tight gap between checkbox rows
         const int subGroupGap = 6;  // vertical gap between sub-groups
 
-        // ── Left column: filter sub-groups ──────────────────────────────
+        // ── Left column: filter sub-groups (two-column layout) ─────────
         // Sub-group headers (ARTISTS / YEAR RANGE / OTHER) carry the
         // filter-section meaning on their own, so no top-level header is
         // drawn here — it would just eat vertical space that the logo and
         // the filters need.
+        //
+        // Filters are arranged in two columns within each sub-group so the
+        // left pane is more compact, leaving the saved vertical space for a
+        // larger Tiger Tag logo below.
         int sy = TOP_H + PAD;
 
-        // Sub-group 1: ARTISTS
+        const int colGap2 = 4;
+        const int colW   = (lw - colGap2) / 2;
+        const int lCol   = lx;
+        const int rCol   = lx + colW + colGap2;
+
+        // Sub-group 1: ARTISTS — single row [ARTIST][SINGER]
         p->settingsArtistsHeaderY = sy;
         sy += subHdrH + subHdrPad;
-        MoveWindow (p->hChkArtist, lx, sy, lw, btnH, FALSE);
-        sy += btnH + rowGap;
-        MoveWindow (p->hChkSinger, lx, sy, lw, btnH, FALSE);
+        MoveWindow (p->hChkArtist, lCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkSinger, rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
         sy += subGroupGap;
 
-        // Sub-group 2: YEAR RANGE
+        // Sub-group 2: YEAR RANGE — unchanged (toggle full-width row 1,
+        // spinner right-anchored row 2).
         p->settingsYearHeaderY = sy;
         sy += subHdrH + subHdrPad;
 
-        // YEAR toggle (wide) + spinner [- label +] — toggle on its own row,
-        // spinner on the row below so everything stays within the 50/50 column.
         const int spinBtnW = 20;
         const int spinLabelW = 46;
         const int spinGroupW = spinBtnW * 2 + spinLabelW + 2;
@@ -778,26 +803,29 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         sy += btnH + rowGap;
         sy += subGroupGap;
 
-        // Sub-group 3: OTHER
+        // Sub-group 3: OTHER — 3 rows of 2 cols
+        //   Row 1: [GROUPING][GENRE]
+        //   Row 2: [ORCHESTRA][LABEL]
+        //   Row 3: [TRACK] alone (right col empty)
         p->settingsOtherHeaderY = sy;
         sy += subHdrH + subHdrPad;
-        MoveWindow (p->hChkGrouping,  lx, sy, lw, btnH, FALSE);
+        MoveWindow (p->hChkGrouping,  lCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkGenre,     rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
-        MoveWindow (p->hChkGenre,     lx, sy, lw, btnH, FALSE);
+        MoveWindow (p->hChkOrchestra, lCol, sy, colW, btnH, FALSE);
+        MoveWindow (p->hChkLabel,     rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
-        MoveWindow (p->hChkOrchestra, lx, sy, lw, btnH, FALSE);
-        sy += btnH + rowGap;
-        MoveWindow (p->hChkLabel,     lx, sy, lw, btnH, FALSE);
-        sy += btnH + rowGap;
-        MoveWindow (p->hChkTrack,     lx, sy, lw, btnH, FALSE);
+        MoveWindow (p->hChkTrack,     lCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
 
         // Logo fills the remaining vertical space between the last filter
-        // and the bottom brand row, with a small margin on either side.
-        const int logoTopPad = 8;
+        // row and the bottom of the Settings tab. Brand row is gone from
+        // this tab (see Fix 1) so no BRAND_H subtraction; the increased
+        // logoTopPad keeps clear separation from the OTHER row above.
+        const int logoTopPad = 16;
         const int logoBotPad = 4;
         int logoTop = sy + logoTopPad;
-        int logoBot = DLG_H - PAD - BRAND_H - logoBotPad;
+        int logoBot = DLG_H - PAD - logoBotPad;
         int logoH = logoBot - logoTop;
         if (logoH < 0) logoH = 0;
         p->settingsLogoY = logoTop;
@@ -993,14 +1021,16 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         for (int i = 0; i < 5; ++i)
             p->hBtnHowTabs[i] = mkBtn (IDC_BTN_HOW_TAB_0 + i, kHowNames[i]);
 
-        // Candidates list — fixed 3 rows. LBS_DISABLENOSCROLL keeps the
-        // scrollbar always visible so interior column X positions stay
-        // pixel-aligned with the search row above (which reserves sbW).
+        // Candidates list — fixed 3 rows, sized to fit exactly. No
+        // scrollbar: the row count is pinned so the scrollbar track would
+        // just be dead space. The candidate row draw code still uses
+        // `r.right - sbW` for its column math; with the scrollbar gone,
+        // r.right == lx + lw (full listbox width) and r.right - sbW still
+        // lands at lx + usableW, matching the search row column positions.
         p->hCandList = CreateWindowW (L"LISTBOX", nullptr,
-                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL
+                                      WS_CHILD | WS_VISIBLE
                                       | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS
-                                      | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT
-                                      | LBS_DISABLENOSCROLL,
+                                      | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
                                       0, 0, 10, 10, hwnd,
                                       (HMENU) IDC_CANDIDATES_LIST, nullptr, nullptr);
 
@@ -1119,17 +1149,36 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
-        HDC hdc = BeginPaint (hwnd, &ps);
+        HDC winDC = BeginPaint (hwnd, &ps);
 
         RECT clientR;
         GetClientRect (hwnd, &clientR);
+
+        // Double-buffer: paint into an off-screen memDC first, then BitBlt
+        // the finished frame to the window DC in one shot. Eliminates the
+        // intermediate white flash from the GDI+ logo DrawImage on Settings
+        // and reduces flicker everywhere else the parent repaints behind
+        // WS_CLIPCHILDREN'd owner-draw children.
+        HDC     memDC  = CreateCompatibleDC (winDC);
+        HBITMAP memBmp = CreateCompatibleBitmap (winDC, clientR.right, clientR.bottom);
+        HBITMAP oldBmp = (HBITMAP) SelectObject (memDC, memBmp);
+        HDC hdc = memDC;
+
         fillRect (hdc, clientR, TCol::bg);
 
         // Top bar
         RECT topR { 0, 0, DLG_W, TOP_H };
         fillRect (hdc, topR, TCol::panel);
 
-        if (!p) { EndPaint (hwnd, &ps); return 0; }
+        if (!p)
+        {
+            BitBlt (winDC, 0, 0, clientR.right, clientR.bottom, memDC, 0, 0, SRCCOPY);
+            SelectObject (memDC, oldBmp);
+            DeleteObject (memBmp);
+            DeleteDC (memDC);
+            EndPaint (hwnd, &ps);
+            return 0;
+        }
 
         // "Tiger Tanda" brand in top bar
         RECT brandR { PAD, 0, DLG_W / 2, TOP_H };
@@ -1429,14 +1478,14 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 ry += secGap;
             }
 
-            // Tiger Tanda brand row (bottom-center of the Settings tab).
-            // Matches the main view's placement so the brand is stable across
-            // tab switches.
-            RECT brandR { 0, DLG_H - PAD - BRAND_H, DLG_W, DLG_H - PAD };
-            drawText (hdc, brandR, L"Tiger Tanda", TCol::accent, p->fontTitle,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            // Brand is main-view only — Settings tab has no bottom brand row.
         }
 
+        // Flush the off-screen buffer to the window DC in one shot.
+        BitBlt (winDC, 0, 0, clientR.right, clientR.bottom, memDC, 0, 0, SRCCOPY);
+        SelectObject (memDC, oldBmp);
+        DeleteObject (memBmp);
+        DeleteDC (memDC);
         EndPaint (hwnd, &ps);
         return 0;
     }
