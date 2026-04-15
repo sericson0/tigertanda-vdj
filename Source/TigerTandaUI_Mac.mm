@@ -153,13 +153,47 @@ static std::wstring formatDateYMD (const std::wstring& d)
 //  Forward declarations
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  TTCenteredTextFieldCell — vertically centers text in NSTextField (#1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@interface TTCenteredTextFieldCell : NSTextFieldCell
+@end
+
+@implementation TTCenteredTextFieldCell
+- (NSRect)adjustedFrameToVerticallyCenterText:(NSRect)frame
+{
+    NSAttributedString* as = self.attributedStringValue;
+    NSSize textSize = [as size];
+    CGFloat yOff = (frame.size.height - textSize.height) / 2.0;
+    if (yOff < 0) yOff = 0;
+    return NSMakeRect (frame.origin.x, frame.origin.y + yOff,
+                       frame.size.width, textSize.height);
+}
+
+- (void)editWithFrame:(NSRect)r inView:(NSView*)v editor:(NSText*)t delegate:(id)d event:(NSEvent*)e
+{
+    [super editWithFrame:[self adjustedFrameToVerticallyCenterText:r] inView:v editor:t delegate:d event:e];
+}
+
+- (void)selectWithFrame:(NSRect)r inView:(NSView*)v editor:(NSText*)t delegate:(id)d start:(NSInteger)s length:(NSInteger)l
+{
+    [super selectWithFrame:[self adjustedFrameToVerticallyCenterText:r] inView:v editor:t delegate:d start:s length:l];
+}
+
+- (void)drawInteriorWithFrame:(NSRect)r inView:(NSView*)v
+{
+    [super drawInteriorWithFrame:[self adjustedFrameToVerticallyCenterText:r] inView:v];
+}
+@end
+
 @class TTListView;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TigerTandaMacUI — Main NSView (interface declared early so TTListView can use it)
 // ─────────────────────────────────────────────────────────────────────────────
 
-@interface TigerTandaMacUI : NSView <NSTextFieldDelegate>
+@interface TigerTandaMacUI : NSView <NSTextFieldDelegate, NSWindowDelegate>
 {
 @public
     TigerTandaPlugin* plugin;
@@ -179,8 +213,12 @@ static std::wstring formatDateYMD (const std::wstring& d)
     NSTimer* browsePollTimer;
     NSTimer* searchDebounceTimer;
 
-    NSButton* closeBtn;
-    NSButton* settingsBtn;
+    // Cached rects for settings tab click handling
+    CGRect settingsToggleRect;
+    CGRect yearToggleRect;
+    CGRect yearMinusRect;
+    CGRect yearPlusRect;
+    CGRect filterRects[7];
 }
 - (instancetype)initWithFrame:(NSRect)frame plugin:(TigerTandaPlugin*)p;
 - (void)layoutUI;
@@ -520,6 +558,13 @@ static std::wstring formatDateYMD (const std::wstring& d)
     // ── Search fields ────────────────────────────────────────────────────
     auto makeField = [&](int x, int y, int w, int h) -> NSTextField* {
         NSTextField* f = [[NSTextField alloc] initWithFrame:NSMakeRect (x, y, w, h)];
+        // Replace cell with vertically-centered version
+        TTCenteredTextFieldCell* cell = [[TTCenteredTextFieldCell alloc] initTextCell:@""];
+        cell.editable = YES;
+        cell.selectable = YES;
+        cell.scrollable = YES;
+        cell.usesSingleLineMode = YES;
+        [f setCell:cell];
         f.bordered = NO;
         f.drawsBackground = YES;
         f.backgroundColor = [NSColor colorWithCalibratedRed:32/255.0 green:36/255.0 blue:52/255.0 alpha:1.0];
@@ -527,8 +572,6 @@ static std::wstring formatDateYMD (const std::wstring& d)
         f.font = [NSFont systemFontOfSize:FONT_SIZE_NORMAL];
         f.focusRingType = NSFocusRingTypeNone;
         f.delegate = self;
-        f.cell.scrollable = YES;
-        f.cell.usesSingleLineMode = YES;
         [self addSubview:f];
         return f;
     };
@@ -564,18 +607,8 @@ static std::wstring formatDateYMD (const std::wstring& d)
     auto [bs, bl] = makeList (2);
     browseScroll = bs; browseList = bl;
 
-    // ── Buttons ──────────────────────────────────────────────────────────
-    closeBtn = [NSButton buttonWithTitle:@"X" target:self action:@selector(closeClicked:)];
-    closeBtn.bordered = NO;
-    closeBtn.font = [NSFont systemFontOfSize:11];
-    [closeBtn setContentTintColor:ttNSColor (TCol::textDim)];
-    [self addSubview:closeBtn];
-
-    settingsBtn = [NSButton buttonWithTitle:@"\u26ED" target:self action:@selector(settingsClicked:)];
-    settingsBtn.bordered = NO;
-    settingsBtn.font = [NSFont systemFontOfSize:13];
-    [settingsBtn setContentTintColor:ttNSColor (TCol::textNormal)];
-    [self addSubview:settingsBtn];
+    // Settings toggle rect — drawn in drawRect, clicked in mouseDown
+    settingsToggleRect = CGRectZero;
 
     // ── Timers ───────────────────────────────────────────────────────────
     browsePollTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
@@ -610,11 +643,10 @@ static std::wstring formatDateYMD (const std::wstring& d)
 
     bool showMain = (plugin->activeTab == 0);
 
-    // Top bar
+    // Settings toggle rect (drawn custom in drawRect, hit-tested in mouseDown)
+    int toggleW = 140;
     int topY = (TOP_H - TAB_BTN_H) / 2;
-    int closeBtnW = 22;
-    closeBtn.frame = NSMakeRect (DLG_W - closeBtnW - 4, topY, closeBtnW, TAB_BTN_H);
-    settingsBtn.frame = NSMakeRect (DLG_W - closeBtnW - 4 - PAD - 140, topY, 140, TAB_BTN_H);
+    settingsToggleRect = cgR (DLG_W - PAD - toggleW, topY, toggleW, TAB_BTN_H);
 
     int bannerShift = plugin->metadataLoadFailed ? META_BANNER_H : 0;
     plugin->columnHeaderY = TOP_H + TOP_GAP + bannerShift;
@@ -692,6 +724,39 @@ static std::wstring formatDateYMD (const std::wstring& d)
     NSFont* fontBrand = [NSFont boldSystemFontOfSize:FONT_SIZE_BRAND];
     cgDrawText (ctx, @"Tiger Tanda", cgR (PAD, 0, DLG_W / 2, TOP_H),
                 fontBrand, TCol::accent);
+
+    // Settings toggle (custom-drawn rounded pill)
+    {
+        NSFont* fontSm = [NSFont boldSystemFontOfSize:FONT_SIZE_SMALL];
+        CGRect tr = settingsToggleRect;
+        bool isSettings = (plugin->activeTab == 1);
+        NSString* label = isSettings ? @"Settings" : @"Tanda";
+
+        // Rounded rect background
+        CGFloat radius = tr.size.height / 2.0;
+        NSBezierPath* pill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(tr.origin.x, tr.origin.y, tr.size.width, tr.size.height)
+            xRadius:radius yRadius:radius];
+        [ttNSColor (TCol::buttonBg) setFill];
+        [pill fill];
+
+        // Active indicator on the correct half
+        CGFloat halfW = tr.size.width / 2.0;
+        CGRect activeR = isSettings
+            ? cgR (tr.origin.x + halfW, tr.origin.y, halfW, tr.size.height)
+            : cgR (tr.origin.x, tr.origin.y, halfW, tr.size.height);
+        NSBezierPath* activePill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(activeR.origin.x, activeR.origin.y, activeR.size.width, activeR.size.height)
+            xRadius:radius yRadius:radius];
+        [ttNSColor (TCol::accent) setFill];
+        [activePill fill];
+
+        // Labels
+        cgDrawText (ctx, @"Tanda", cgR (tr.origin.x, tr.origin.y, halfW, tr.size.height),
+                    fontSm, !isSettings ? TCol::textBright : TCol::textDim, NSTextAlignmentCenter);
+        cgDrawText (ctx, @"Settings", cgR (tr.origin.x + halfW, tr.origin.y, halfW, tr.size.height),
+                    fontSm, isSettings ? TCol::textBright : TCol::textDim, NSTextAlignmentCenter);
+    }
 
     bool showMain = (plugin->activeTab == 0);
 
@@ -798,15 +863,25 @@ static std::wstring formatDateYMD (const std::wstring& d)
             }
         }
 
-        // ADD button area
-        cgFill (ctx, cgR (rx + rw - 72, preRowY, 72, BTN_H), TCol::buttonBg);
-        cgDrawText (ctx, @"ADD", cgR (rx + rw - 72, preRowY, 72, BTN_H),
-                    fontBold, TCol::textBright, NSTextAlignmentCenter);
+        // ADD button (rounded)
+        {
+            NSBezierPath* addPill = [NSBezierPath bezierPathWithRoundedRect:
+                NSMakeRect (rx + rw - 72, preRowY, 72, BTN_H) xRadius:4 yRadius:4];
+            [ttNSColor (TCol::buttonBg) setFill];
+            [addPill fill];
+            cgDrawText (ctx, @"ADD", cgR (rx + rw - 72, preRowY, 72, BTN_H),
+                        fontBold, TCol::textBright, NSTextAlignmentCenter);
+        }
 
-        // Prelisten button area
-        cgFill (ctx, cgR (rx, preRowY, 28, BTN_H), TCol::buttonBg);
-        cgDrawText (ctx, @"\u25B6", cgR (rx, preRowY, 28, BTN_H),
-                    fontNorm, TCol::textBright, NSTextAlignmentCenter);
+        // Prelisten button (rounded)
+        {
+            NSBezierPath* prePill = [NSBezierPath bezierPathWithRoundedRect:
+                NSMakeRect (rx, preRowY, 28, BTN_H) xRadius:4 yRadius:4];
+            [ttNSColor (TCol::buttonBg) setFill];
+            [prePill fill];
+            cgDrawText (ctx, @"\u25B6", cgR (rx, preRowY, 28, BTN_H),
+                        fontNorm, TCol::textBright, NSTextAlignmentCenter);
+        }
     }
 }
 
@@ -815,15 +890,22 @@ static std::wstring formatDateYMD (const std::wstring& d)
     cgFill (ctx, r, TCol::card);
     cgFill (ctx, cgR (r.origin.x, r.origin.y, r.size.width, 1), TCol::cardBorder);
 
-    if (plugin->confirmedIdx < 0 || plugin->confirmedIdx >= (int) plugin->candidates.size())
+    // Show selected match result (not the search candidate)
+    if (plugin->selectedResultIdx < 0 || plugin->selectedResultIdx >= (int) plugin->results.size())
     {
-        NSFont* fontSm = [NSFont systemFontOfSize:FONT_SIZE_SMALL];
-        cgDrawText (ctx, @"No track selected", cgR (r.origin.x + 6, r.origin.y, r.size.width - 12, r.size.height),
-                    fontSm, TCol::textDim, NSTextAlignmentCenter);
-        return;
+        // Fall back to confirmed candidate if no match selected
+        if (plugin->confirmedIdx < 0 || plugin->confirmedIdx >= (int) plugin->candidates.size())
+        {
+            NSFont* fontSm = [NSFont systemFontOfSize:FONT_SIZE_SMALL];
+            cgDrawText (ctx, @"No track selected", cgR (r.origin.x + 6, r.origin.y, r.size.width - 12, r.size.height),
+                        fontSm, TCol::textDim, NSTextAlignmentCenter);
+            return;
+        }
     }
 
-    const TgRecord& rec = plugin->candidates[plugin->confirmedIdx].record;
+    const TgRecord& rec = (plugin->selectedResultIdx >= 0 && plugin->selectedResultIdx < (int) plugin->results.size())
+        ? plugin->results[plugin->selectedResultIdx]
+        : plugin->candidates[plugin->confirmedIdx].record;
     NSFont* fontBold = [NSFont boldSystemFontOfSize:FONT_SIZE_NORMAL];
     NSFont* fontNorm = [NSFont systemFontOfSize:FONT_SIZE_NORMAL];
 
@@ -885,7 +967,7 @@ static std::wstring formatDateYMD (const std::wstring& d)
     cgDrawText (ctx, @"FILTERS", cgR (lx + 6, ly, 200, 18), fontBold, TCol::textBright);
     ly += 24;
 
-    // Filter buttons (drawn as simple rectangles)
+    // Filter buttons (rounded rects)
     struct FilterInfo { const char* label; bool* value; };
     FilterInfo filters[] = {
         {"ARTIST",    &plugin->filterSameArtist},
@@ -899,13 +981,22 @@ static std::wstring formatDateYMD (const std::wstring& d)
 
     int btnW = 80, btnH = 22, btnGap = 4;
     int bx = lx + 6;
+    int filterIdx = 0;
     for (auto& f : filters)
     {
         TTColor bg = *f.value ? TCol::filterActive : TCol::buttonBg;
         TTColor fg = *f.value ? TCol::textBright : TCol::textDim;
-        cgFill (ctx, cgR (bx, ly, btnW, btnH), bg);
+
+        NSRect btnRect = NSMakeRect (bx, ly, btnW, btnH);
+        NSBezierPath* rr = [NSBezierPath bezierPathWithRoundedRect:btnRect xRadius:4 yRadius:4];
+        [ttNSColor (bg) setFill];
+        [rr fill];
+
         cgDrawText (ctx, [NSString stringWithUTF8String:f.label],
                     cgR (bx, ly, btnW, btnH), fontSm, fg, NSTextAlignmentCenter);
+
+        filterRects[filterIdx++] = cgR (bx, ly, btnW, btnH);
+
         bx += btnW + btnGap;
         if (bx + btnW > settingsL - PAD)
         {
@@ -916,14 +1007,38 @@ static std::wstring formatDateYMD (const std::wstring& d)
 
     ly += btnH + 12;
 
-    // Year range
+    // Year toggle + spinner
+    int yearBtnW = 100;
     NSString* yearLabel = plugin->filterUseYearRange
         ? [NSString stringWithFormat:@"YEAR: \u00B1%d YRS", plugin->yearRange]
         : @"YEAR: OFF";
     TTColor yearBg = plugin->filterUseYearRange ? TCol::filterActive : TCol::buttonBg;
     TTColor yearFg = plugin->filterUseYearRange ? TCol::textBright : TCol::textDim;
-    cgFill (ctx, cgR (lx + 6, ly, 140, btnH), yearBg);
-    cgDrawText (ctx, yearLabel, cgR (lx + 6, ly, 140, btnH), fontSm, yearFg, NSTextAlignmentCenter);
+
+    NSBezierPath* yearPill = [NSBezierPath bezierPathWithRoundedRect:
+        NSMakeRect (lx + 6, ly, yearBtnW, btnH) xRadius:4 yRadius:4];
+    [ttNSColor (yearBg) setFill];
+    [yearPill fill];
+    cgDrawText (ctx, yearLabel, cgR (lx + 6, ly, yearBtnW, btnH), fontSm, yearFg, NSTextAlignmentCenter);
+    yearToggleRect = cgR (lx + 6, ly, yearBtnW, btnH);
+
+    // - button
+    int spinX = lx + 6 + yearBtnW + 6;
+    NSBezierPath* minusPill = [NSBezierPath bezierPathWithRoundedRect:
+        NSMakeRect (spinX, ly, 28, btnH) xRadius:4 yRadius:4];
+    [ttNSColor (TCol::buttonBg) setFill];
+    [minusPill fill];
+    cgDrawText (ctx, @"\u2212", cgR (spinX, ly, 28, btnH), fontSm, TCol::textBright, NSTextAlignmentCenter);
+    yearMinusRect = cgR (spinX, ly, 28, btnH);
+
+    // + button
+    spinX += 32;
+    NSBezierPath* plusPill = [NSBezierPath bezierPathWithRoundedRect:
+        NSMakeRect (spinX, ly, 28, btnH) xRadius:4 yRadius:4];
+    [ttNSColor (TCol::buttonBg) setFill];
+    [plusPill fill];
+    cgDrawText (ctx, @"+", cgR (spinX, ly, 28, btnH), fontSm, TCol::textBright, NSTextAlignmentCenter);
+    yearPlusRect = cgR (spinX, ly, 28, btnH);
 
     // Right column: HOW IT WORKS
     int ry = TOP_H + TOP_GAP + 8;
@@ -969,11 +1084,62 @@ static std::wstring formatDateYMD (const std::wstring& d)
 - (void)mouseDown:(NSEvent*)event
 {
     NSPoint loc = [self convertPoint:[event locationInWindow] fromView:nil];
+    CGPoint pt = CGPointMake (loc.x, loc.y);
 
-    // Settings tab toggle
-    if (plugin->activeTab == 0)
+    // Settings toggle (top bar)
+    if (CGRectContainsPoint (settingsToggleRect, pt))
     {
-        // Check filter button clicks in settings
+        plugin->activeTab = (plugin->activeTab == 1) ? 0 : 1;
+        plugin->saveSettings();
+        [self layoutUI];
+        return;
+    }
+
+    // Settings tab filter/year button clicks
+    if (plugin->activeTab == 1)
+    {
+        bool* filterPtrs[] = {
+            &plugin->filterSameArtist, &plugin->filterSameSinger,
+            &plugin->filterSameGenre, &plugin->filterSameLabel,
+            &plugin->filterSameGrouping, &plugin->filterSameOrchestra,
+            &plugin->filterSameTrack
+        };
+        for (int i = 0; i < 7; ++i)
+        {
+            if (CGRectContainsPoint (filterRects[i], pt))
+            {
+                *filterPtrs[i] = !(*filterPtrs[i]);
+                plugin->saveSettings();
+                plugin->runTandaSearch();
+                [self setNeedsDisplay:YES];
+                return;
+            }
+        }
+
+        if (CGRectContainsPoint (yearToggleRect, pt))
+        {
+            plugin->filterUseYearRange = !plugin->filterUseYearRange;
+            plugin->saveSettings();
+            plugin->runTandaSearch();
+            [self setNeedsDisplay:YES];
+            return;
+        }
+        if (CGRectContainsPoint (yearMinusRect, pt))
+        {
+            if (plugin->yearRange > 1) plugin->yearRange--;
+            plugin->saveSettings();
+            plugin->runTandaSearch();
+            [self setNeedsDisplay:YES];
+            return;
+        }
+        if (CGRectContainsPoint (yearPlusRect, pt))
+        {
+            if (plugin->yearRange < 20) plugin->yearRange++;
+            plugin->saveSettings();
+            plugin->runTandaSearch();
+            [self setNeedsDisplay:YES];
+            return;
+        }
     }
 
     // ADD button click (right column, bottom)
@@ -1011,16 +1177,14 @@ static std::wstring formatDateYMD (const std::wstring& d)
     }
 }
 
-- (void)closeClicked:(id)sender
-{
-    [self.window close];
-}
+// ─────────────────────────────────────────────────────────────────────────────
+//  Window delegate — notify VDJ when window closes (#8)
+// ─────────────────────────────────────────────────────────────────────────────
 
-- (void)settingsClicked:(id)sender
+- (void)windowWillClose:(NSNotification*)notification
 {
-    plugin->activeTab = (plugin->activeTab == 1) ? 0 : 1;
-    plugin->saveSettings();
-    [self layoutUI];
+    if (plugin)
+        plugin->dialogRequestedOpen = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1119,13 +1283,8 @@ void createMacUI (TigerTandaPlugin* p, void* vdjWindow)
         TigerTandaMacUI* ui = [[TigerTandaMacUI alloc] initWithFrame:NSMakeRect(0, 0, DLG_W, DLG_H)
                                                               plugin:p];
         panel.contentView = ui;
+        panel.delegate = ui;  // windowWillClose notification
 
-        // Center on VDJ window if available
-        if (vdjWindow)
-        {
-            // VDJ passes an NSWindow* as void*
-            // For safety, just center on screen
-        }
         [panel center];
         [panel makeKeyAndOrderFront:nil];
 
