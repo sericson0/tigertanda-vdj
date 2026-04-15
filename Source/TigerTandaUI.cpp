@@ -60,19 +60,21 @@ static const wchar_t* HOVER_POPUP_CLASS = L"TigerTandaHoverPopup";
 // Rows:
 //   1) Filename     (bold small, 1 line)
 //   2) Folder path  (small dim, up to 2 lines via DT_WORDBREAK)
-//   3) Album        (small, 1 line)
+//   3) Album        (small, up to 2 lines via DT_WORDBREAK)
 //   4) Stars+plays  (small, 1 line)
-// Total text rows = 5 (row 2 counted twice for the wrap).
-static constexpr int HOVER_POPUP_TEXT_LINES = 5;
+// Total text rows = 6 (rows 2 & 3 each counted twice for wrapping).
+static constexpr int HOVER_POPUP_TEXT_LINES = 6;
 static SIZE hoverPopupSize (const BrowseItem& /*bi*/)
 {
     const int lineH  = 15;
     const int padY   = 6;
     SIZE sz;
-    // Slightly wider than before (was 240) so folder paths are more likely
-    // to fit on 1 line — still comfortably inside the right column
-    // (right col ≈ 278px @ DLG_W=700).
-    sz.cx = 270;
+    // Match the right column width so the popup aligns with the browse
+    // list cards. Computed from the same layout constants as applyLayout:
+    //   rightW = DLG_W - DLG_W * LEFT_COL_PCT / 100
+    //   rw     = rightW - PAD - COL_GAP / 2   (COL_GAP = 4)
+    const int rightW = DLG_W - DLG_W * LEFT_COL_PCT / 100;
+    sz.cx = rightW - PAD - 4 / 2;
     sz.cy = padY * 2 + HOVER_POPUP_TEXT_LINES * lineH + 4;  // +4: small gaps
     return sz;
 }
@@ -196,16 +198,17 @@ static void hoverPopupPaint (HWND popup, TigerTandaPlugin* p)
     y += lineH * 2 + 1;
 
     // Row 3: Album name, prefixed with "Album: " so it's unambiguous
-    // alongside the filename/folder rows above.
-    RECT r3 { client.left + padX, y, client.right - padX, y + lineH };
+    // alongside the filename/folder rows above. Allow 2 lines for long
+    // album names (same approach as the folder path row above).
+    RECT r3 { client.left + padX, y, client.right - padX, y + lineH * 2 };
     std::wstring albumText = bi.album.empty()
         ? (L"Album: " + kDash)
         : (L"Album: " + bi.album);
     drawText (hdc, r3, albumText,
               bi.album.empty() ? TCol::textDim : TCol::textBright,
               p->fontSmall,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    y += lineH + 2;  // small visual gap before the meta row
+              DT_LEFT | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
+    y += lineH * 2 + 2;  // small visual gap before the meta row
 
     // Row 3: Stars in accent, separator + plays in dim gray, all fontSmall.
     // Draw in three adjacent rects so we can color the segments independently.
@@ -1072,7 +1075,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
 
         // ── Left column: FILTERS main header + sub-groups ──────────────
         // Everything on the left is a 2-column grid. DEFAULTS gets
-        // [ARTIST][SINGER] on one row and [GENRE][YEAR + spinner] on the
+        // [ARTIST][SINGER] on one row and [YEAR + spinner][GENRE] on the
         // next. OTHER gets [LABEL][GROUPING] / [ORCHESTRA][TRACK]. The
         // bolded "FILTERS" header sits at the top, mirroring "HOW IT WORKS"
         // on the right.
@@ -1089,36 +1092,36 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         p->settingsMainHeaderY = sy;
         sy += mainHdrH + mainHdrPad;
 
-        // Sub-group 1: DEFAULTS — [ARTIST][SINGER] (GENRE moves to year row)
+        // Sub-group 1: DEFAULTS — [ARTIST][SINGER] then [YEAR + spinner][GENRE]
         p->settingsArtistsHeaderY = sy;
         sy += subHdrH + subHdrPad;
         MoveWindow (p->hChkArtist, lCol, sy, colW, btnH, FALSE);
         MoveWindow (p->hChkSinger, rCol, sy, colW, btnH, FALSE);
         sy += btnH + rowGap;
 
-        // Row 2 of DEFAULTS: [GENRE][YEAR + spinner]
+        // Row 2 of DEFAULTS: [YEAR + spinner][GENRE]
         //
-        // Right half of this row holds both the YEAR checkbox and its
+        // Left half of this row holds both the YEAR checkbox and its
         // ±N spinner as one control group. We give the YEAR checkbox a
         // fixed width (wide enough for the glyph + "YEAR" label) and
-        // squeeze the spinner into the remaining right-column space.
+        // squeeze the spinner into the remaining left-column space.
         const int spinBtnW   = 20;
         const int spinLabelW = 40;
         const int spinGroupW = spinBtnW * 2 + spinLabelW + 2;
-        // YEAR checkbox uses the remainder of the right column minus the
+        // YEAR checkbox uses the remainder of the left column minus the
         // spinner and a small gap.
         const int yearSpinGap = 4;
         int yearChkW = colW - spinGroupW - yearSpinGap;
         if (yearChkW < 48) yearChkW = 48;  // floor for glyph + "YEAR"
 
-        int yearChkX = rCol;
+        int yearChkX = lCol;
         int spinX    = yearChkX + yearChkW + yearSpinGap;
 
-        MoveWindow (p->hChkGenre,      lCol,     sy, colW,     btnH,     FALSE);
         MoveWindow (p->hBtnYearToggle, yearChkX, sy, yearChkW, btnH,     FALSE);
         MoveWindow (p->hBtnYearMinus,  spinX,                                   sy + 1, spinBtnW,   btnH - 2, FALSE);
         MoveWindow (p->hBtnYearRange,  spinX + spinBtnW + 1,                    sy + 1, spinLabelW, btnH - 2, FALSE);
         MoveWindow (p->hBtnYearPlus,   spinX + spinBtnW + 1 + spinLabelW + 1,   sy + 1, spinBtnW,   btnH - 2, FALSE);
+        MoveWindow (p->hChkGenre,      rCol,     sy, colW,     btnH,     FALSE);
 
         // The settingsYearHeaderY field is unused in the new layout (year
         // row has no sub-header) but we still reset it to keep state clean.
@@ -1569,15 +1572,15 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT htR { lx, headerY, lx + titleW, headerY + 12 };
             RECT haR { lx + titleW + gap, headerY, lx + titleW + gap + artistW, headerY + 12 };
             RECT hyR { lx + usableW - YEAR_COL_W, headerY, lx + usableW, headerY + 12 };
-            drawText (hdc, htR, L"TITLE",  TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
-            drawText (hdc, haR, L"ARTIST", TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
-            drawText (hdc, hyR, L"YEAR",   TCol::textDim, p->fontSmall, DT_CENTER | DT_TOP | DT_SINGLELINE);
+            drawText (hdc, htR, L"TITLE",  TCol::textDim, p->fontSmallBold, DT_LEFT | DT_TOP | DT_SINGLELINE);
+            drawText (hdc, haR, L"ARTIST", TCol::textDim, p->fontSmallBold, DT_LEFT | DT_TOP | DT_SINGLELINE);
+            drawText (hdc, hyR, L"YEAR",   TCol::textDim, p->fontSmallBold, DT_CENTER | DT_TOP | DT_SINGLELINE);
 
             // "MATCHES (N)" header — use the Y cached by applyLayout so the
             // math stays in exactly one place.
             std::wstring matchLabel = L"MATCHES (" + std::to_wstring (p->results.size()) + L")";
             RECT mhR { lx, p->matchHeaderY, lx + lw, p->matchHeaderY + 12 };
-            drawText (hdc, mhR, matchLabel, TCol::textDim, p->fontSmall, DT_LEFT | DT_TOP | DT_SINGLELINE);
+            drawText (hdc, mhR, matchLabel, TCol::textDim, p->fontSmallBold, DT_LEFT | DT_TOP | DT_SINGLELINE);
 
             // Detail box — no header label above it, the box's track title
             // row is the header. Flush against the top bar (plus banner).
@@ -1604,7 +1607,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // the full right-column width. (FIND IN VDJ button removed.)
             RECT bhR { rx, p->browseResultsHeaderY,
                        rx + rw, p->browseResultsHeaderY + 16 };
-            drawText (hdc, bhR, L"VDJ BROWSER RESULTS", TCol::textDim, p->fontSmall,
+            drawText (hdc, bhR, L"VDJ BROWSER RESULTS", TCol::textDim, p->fontSmallBold,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
             // When browseItems is empty the listbox is hidden via
@@ -1783,24 +1786,29 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Tanda-style header, then bullet lines in normal text.
             struct HowSection {
                 const wchar_t* title;
-                const wchar_t* bullets[4];
+                // Up to 6 bullet lines + nullptr terminator. The render loop
+                // below stops on the first nullptr, so sections with fewer
+                // bullets just leave the tail entries unset (implicitly
+                // nullptr per aggregate-init rules).
+                const wchar_t* bullets[7];
             };
             static const HowSection kSections[] = {
-                { L"TRACK",    { L"\u2022  Browse a track in VDJ \u2014 Tiger Tanda identifies it",
-                                 L"\u2022  Or type title / artist to search the metadata CSV",
-                                 L"\u2022  First match auto-confirms; pick another if needed",
+                { L"TRACK",    { L"\u2022  Browse a track in VDJ. Add or update search with inputs",
+                                 L"\u2022  Matches to database. Top 3 presented, with first selected",
                                  nullptr } },
-                { L"MATCHES",  { L"\u2022  Similar tracks from the CSV, filtered by your rules",
-                                 L"\u2022  \u2193 / Enter / click \u2192 search your VDJ library",
-                                 L"\u2022  Sorted by year; tweak YEAR to widen or narrow",
+                { L"TANDA MATCHES",  { L"\u2022  Similar tracks presented based on filters.",
+                                 L"\u2022  Customize filters in setting tab",
+                                 L"\u2022  Press enter or click to search your VDJ library",
                                  nullptr } },
-                { L"BROWSER",  { L"\u2022  Top library hits scored on artist, title, year & rating",
-                                 L"\u2022  Tab cycles rows; hover for filename / folder / album",
+                { L"BROWSER RESULTS",  { L"\u2022  Top 4 browser results presented",
+                                 L"\u2022  Hover over for additional info",
                                  L"\u2022  ADD \u2192 automix  \u00B7  Right-click ADD \u2192 sidelist",
                                  nullptr } },
-                { L"FILTERS",  { L"\u2022  DEFAULTS: ARTIST / SINGER / GENRE keep the tanda consistent",
-                                 L"\u2022  OTHER: LABEL / GROUPING / ORCHESTRA / TRACK tighten results",
+                { L"FILTERS",  { L"\u2022  ARTIST / SINGER filter based on bandleader and singer",
+                                 L"\u2022  GENRE matches to Tango, Vals, Milonga",
                                  L"\u2022  YEAR limits matches to \u00B1N years of the pick",
+                                 L"\u2022  LABEL \u2192 Record label, GROUPING \u2192 Similar era",
+                                 L"\u2022  ORCHESTRA \u2192 orchestra name, TRACK \u2192 track name",
                                  nullptr } },
             };
             const int secGap  = 4;   // space between sections
@@ -2508,7 +2516,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             bool confirmed = ((int) di->itemID == p->confirmedIdx);
             bool even = (di->itemID % 2 == 0);
 
-            fillRect (hdc, r, confirmed ? TCol::matchSel : even ? TCol::card : TCol::panel);
+            fillRect (hdc, r, confirmed ? TCol::selSubtle : even ? TCol::card : TCol::panel);
 
             if (confirmed)
             {
@@ -2571,6 +2579,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
 
+            if (sel)
+            {
+                RECT accentR { r.left, r.top, r.left + 3, r.bottom };
+                fillRect (hdc, accentR, TCol::accent);
+            }
+
             // Column math mirrors the candidates list. Critical detail:
             // LBS_DISABLENOSCROLL reserves the scrollbar column in the
             // listbox client area, so r.right here is already equal to
@@ -2627,7 +2641,13 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             bool sel  = ((int) di->itemID == p->selectedBrowseIdx);
             bool even = (di->itemID % 2 == 0);
 
-            fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
+            fillRect (hdc, r, sel ? TCol::selSubtle : even ? TCol::card : TCol::panel);
+
+            if (sel)
+            {
+                RECT accentR { r.left, r.top, r.left + 3, r.bottom };
+                fillRect (hdc, accentR, TCol::accent);
+            }
 
             // Album art thumbnail on right (square, full row height minus padding)
             const int itemH   = r.bottom - r.top;
@@ -2674,12 +2694,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             drawText (hdc, titleR, bi.title, TCol::textBright, p->fontBold,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            drawText (hdc, yearR,  bi.year,  TCol::textDim,    p->fontSmall,
+            drawText (hdc, yearR,  bi.year,  sel ? TCol::textBright : TCol::textDim, p->fontSmall,
                       DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
             // Row 2 (bottom half): Artist, full width of text area
             RECT artistR { tx, row1Bot, textRight, r.bottom - 4 };
-            drawText (hdc, artistR, bi.artist, TCol::textDim, p->fontSmall,
+            drawText (hdc, artistR, bi.artist, sel ? TCol::textBright : TCol::textDim, p->fontSmall,
                       DT_LEFT  | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
             HPEN pen = CreatePen (PS_SOLID, 1, TCol::cardBorder);
