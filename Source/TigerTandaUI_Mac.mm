@@ -11,6 +11,7 @@
 #include "CoverArt.h"
 
 #include <cmath>
+#include <cstdlib>
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -187,6 +188,121 @@ static std::wstring formatDateYMD (const std::wstring& d)
 }
 @end
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Path helpers for hover popup
+// ─────────────────────────────────────────────────────────────────────────────
+
+static std::wstring fileNameFromPath (const std::wstring& path)
+{
+    if (path.empty()) return {};
+    size_t slash = path.find_last_of (L"\\/");
+    return (slash == std::wstring::npos) ? path : path.substr (slash + 1);
+}
+
+static std::wstring parentFolderFromPath (const std::wstring& path)
+{
+    if (path.empty()) return {};
+    size_t slash = path.find_last_of (L"\\/");
+    return (slash == std::wstring::npos) ? std::wstring() : path.substr (0, slash);
+}
+
+static std::wstring shortenHomePath (const std::wstring& path)
+{
+    if (path.empty()) return {};
+    const char* home = getenv ("HOME");
+    if (!home) return path;
+    std::wstring wHome = toWide (std::string (home));
+    if (path.size() <= wHome.size()) return path;
+    if (path.compare (0, wHome.size(), wHome) != 0) return path;
+    if (path[wHome.size()] != L'/' && path[wHome.size()] != L'\\') return path;
+    return L"~" + path.substr (wHome.size());
+}
+
+static std::wstring buildStarString (int stars)
+{
+    if (stars < 0) stars = 0;
+    if (stars > 5) stars = 5;
+    std::wstring s;
+    for (int i = 0; i < 5; ++i)
+        s += (i < stars) ? L"\u2605" : L"\u2606";
+    return s;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TTHoverPopupView — content view for the hover popup panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+@interface TTHoverPopupView : NSView
+{
+@public
+    BrowseItem item;
+}
+@end
+
+@implementation TTHoverPopupView
+
+- (BOOL)isFlipped { return YES; }
+
+- (void)drawRect:(NSRect)dirtyRect
+{
+    CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+    NSRect bounds = self.bounds;
+
+    // Background + 1px border
+    cgFill (ctx, bounds, TCol::card);
+    cgFill (ctx, cgR (0, 0, bounds.size.width, 1), TCol::cardBorder);
+    cgFill (ctx, cgR (0, bounds.size.height - 1, bounds.size.width, 1), TCol::cardBorder);
+    cgFill (ctx, cgR (0, 0, 1, bounds.size.height), TCol::cardBorder);
+    cgFill (ctx, cgR (bounds.size.width - 1, 0, 1, bounds.size.height), TCol::cardBorder);
+
+    NSFont* fontSmB = [NSFont boldSystemFontOfSize:FONT_SIZE_SMALL];
+    NSFont* fontSm  = [NSFont systemFontOfSize:FONT_SIZE_SMALL];
+
+    const int padX = 10, padY = 6, lineH = 15;
+    int y = padY;
+    int w = (int) bounds.size.width;
+    NSString* dash = @"\u2014";
+
+    // Row 1: Filename (bold)
+    std::wstring fname = fileNameFromPath (item.filePath);
+    cgDrawText (ctx, fname.empty() ? dash : toNS (fname),
+                cgR (padX, y, w - padX * 2, lineH),
+                fontSmB, fname.empty() ? TCol::textDim : TCol::textBright);
+    y += lineH;
+
+    // Row 2: Parent folder (dim, up to 2 lines)
+    std::wstring folder = shortenHomePath (parentFolderFromPath (item.filePath));
+    cgDrawText (ctx, folder.empty() ? dash : toNS (folder),
+                cgR (padX, y, w - padX * 2, lineH * 2),
+                fontSm, folder.empty() ? TCol::textDim : TCol::textNormal,
+                NSTextAlignmentLeft, NO, YES);
+    y += lineH * 2 + 1;
+
+    // Row 3: Album (up to 2 lines)
+    std::wstring albumText = item.album.empty()
+        ? L"Album: \u2014"
+        : L"Album: " + item.album;
+    cgDrawText (ctx, toNS (albumText),
+                cgR (padX, y, w - padX * 2, lineH * 2),
+                fontSm, item.album.empty() ? TCol::textDim : TCol::textBright,
+                NSTextAlignmentLeft, NO, YES);
+    y += lineH * 2 + 2;
+
+    // Row 4: Stars · Plays
+    std::wstring starsStr = (item.stars > 0) ? buildStarString (item.stars) : L"no rating";
+    std::wstring playsStr = std::to_wstring (item.playCount) + L" plays";
+    std::wstring metaLine = starsStr + L"  \u2022  " + playsStr;
+    // Draw stars portion in accent, rest in dim
+    // For simplicity, draw the whole line then overlay stars in color
+    cgDrawText (ctx, toNS (metaLine), cgR (padX, y, w - padX * 2, lineH),
+                fontSm, TCol::textDim);
+    // Overlay just the stars in accent color
+    cgDrawText (ctx, toNS (starsStr), cgR (padX, y, w - padX * 2, lineH),
+                fontSm, (item.stars > 0) ? TCol::accentBrt : TCol::textDim);
+}
+
+@end
+
 @class TTListView;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,6 +329,12 @@ static std::wstring formatDateYMD (const std::wstring& d)
     NSTimer* browsePollTimer;
     NSTimer* searchDebounceTimer;
 
+    // Hover popup
+    NSPanel* hoverPopup;
+    int hoverPopupItem;
+    int hoverPendingItem;
+    NSTimer* hoverDwellTimer;
+
     // Cached rects for settings tab click handling
     CGRect settingsToggleRect;
     CGRect yearToggleRect;
@@ -222,6 +344,8 @@ static std::wstring formatDateYMD (const std::wstring& d)
 }
 - (instancetype)initWithFrame:(NSRect)frame plugin:(TigerTandaPlugin*)p;
 - (void)layoutUI;
+- (void)browseMouseMovedToItem:(int)idx;
+- (void)browseMouseExited;
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,6 +366,36 @@ static std::wstring formatDateYMD (const std::wstring& d)
 
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
+
+- (void)updateTrackingAreas
+{
+    [super updateTrackingAreas];
+    // Only browse list needs mouse tracking for hover popup
+    if (listType != 2) return;
+    for (NSTrackingArea* ta in self.trackingAreas)
+        [self removeTrackingArea:ta];
+    NSTrackingArea* ta = [[NSTrackingArea alloc]
+        initWithRect:self.bounds
+        options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow
+        owner:self userInfo:nil];
+    [self addTrackingArea:ta];
+}
+
+- (void)mouseMoved:(NSEvent*)event
+{
+    if (listType != 2 || !_parentUI) return;
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView:nil];
+    int itemH = [self itemHeight];
+    int idx = (int) (loc.y / itemH);
+    if (idx < 0 || idx >= [self itemCount]) idx = -1;
+    [_parentUI browseMouseMovedToItem:idx];
+}
+
+- (void)mouseExited:(NSEvent*)event
+{
+    if (listType == 2 && _parentUI)
+        [_parentUI browseMouseExited];
+}
 
 - (int)itemHeight
 {
@@ -607,6 +761,10 @@ static std::wstring formatDateYMD (const std::wstring& d)
     auto [bs, bl] = makeList (2);
     browseScroll = bs; browseList = bl;
 
+    // Hover popup state
+    hoverPopupItem = -1;
+    hoverPendingItem = -1;
+
     // Settings toggle rect — drawn in drawRect, clicked in mouseDown
     settingsToggleRect = CGRectZero;
 
@@ -625,6 +783,100 @@ static std::wstring formatDateYMD (const std::wstring& d)
 {
     [browsePollTimer invalidate];
     [searchDebounceTimer invalidate];
+    [hoverDwellTimer invalidate];
+    [hoverPopup close];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Hover popup
+// ─────────────────────────────────────────────────────────────────────────────
+
+- (void)showHoverPopupForItem:(int)idx atScreenPoint:(NSPoint)screenPt
+{
+    if (idx < 0 || idx >= (int) plugin->browseItems.size()) return;
+
+    const int popupW = 270;
+    const int popupH = 100;
+
+    // Position below and to the right of the cursor, clamped to screen
+    NSRect popupFrame = NSMakeRect (screenPt.x + 8, screenPt.y - popupH - 8, popupW, popupH);
+
+    // Clamp to screen
+    NSScreen* screen = [NSScreen mainScreen];
+    if (screen)
+    {
+        NSRect vis = screen.visibleFrame;
+        if (popupFrame.origin.x + popupW > vis.origin.x + vis.size.width)
+            popupFrame.origin.x = vis.origin.x + vis.size.width - popupW;
+        if (popupFrame.origin.y < vis.origin.y)
+            popupFrame.origin.y = screenPt.y + 20; // flip above cursor
+    }
+
+    if (!hoverPopup)
+    {
+        hoverPopup = [[NSPanel alloc]
+            initWithContentRect:popupFrame
+            styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+            backing:NSBackingStoreBuffered
+            defer:NO];
+        hoverPopup.level = NSFloatingWindowLevel + 1;
+        hoverPopup.hidesOnDeactivate = NO;
+        hoverPopup.opaque = NO;
+        hoverPopup.backgroundColor = [NSColor clearColor];
+
+        TTHoverPopupView* pv = [[TTHoverPopupView alloc] initWithFrame:
+            NSMakeRect (0, 0, popupW, popupH)];
+        hoverPopup.contentView = pv;
+    }
+
+    TTHoverPopupView* pv = (TTHoverPopupView*) hoverPopup.contentView;
+    pv->item = plugin->browseItems[idx];
+    [hoverPopup setFrame:popupFrame display:NO];
+    [pv setNeedsDisplay:YES];
+    [hoverPopup orderFront:nil];
+    hoverPopupItem = idx;
+}
+
+- (void)hideHoverPopup
+{
+    [hoverDwellTimer invalidate];
+    hoverDwellTimer = nil;
+    hoverPendingItem = -1;
+    if (hoverPopup)
+    {
+        [hoverPopup orderOut:nil];
+        hoverPopupItem = -1;
+    }
+}
+
+- (void)hoverDwellFired:(NSTimer*)timer
+{
+    hoverDwellTimer = nil;
+    if (hoverPendingItem >= 0)
+    {
+        NSPoint screenPt = [NSEvent mouseLocation];
+        [self showHoverPopupForItem:hoverPendingItem atScreenPoint:screenPt];
+    }
+}
+
+- (void)browseMouseMovedToItem:(int)idx
+{
+    if (idx == hoverPopupItem) return;  // already showing this item
+    if (idx == hoverPendingItem) return;  // already pending
+
+    [self hideHoverPopup];
+
+    if (idx >= 0 && idx < (int) plugin->browseItems.size())
+    {
+        hoverPendingItem = idx;
+        hoverDwellTimer = [NSTimer scheduledTimerWithTimeInterval:0.75
+            target:self selector:@selector(hoverDwellFired:) userInfo:nil repeats:NO];
+    }
+}
+
+- (void)browseMouseExited
+{
+    [self hideHoverPopup];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
