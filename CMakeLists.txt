@@ -97,9 +97,19 @@ target_include_directories(TigerTanda PRIVATE
 )
 
 # Copy metadata.csv next to the VDJ plugin output
-add_custom_command(TARGET TigerTanda POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/metadata.csv"
-        "$<TARGET_FILE_DIR:TigerTanda>/metadata.csv"
-    COMMENT "Copying metadata.csv to VDJ plugin output directory"
-)
+if(APPLE)
+    # On Mac, TARGET_FILE_DIR points inside the .bundle — put csv next to it instead
+    add_custom_command(TARGET TigerTanda POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/metadata.csv"
+            "${CMAKE_BINARY_DIR}/metadata.csv"
+        COMMENT "Copying metadata.csv to build directory"
+    )
+else()
+    add_custom_command(TARGET TigerTanda POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/metadata.csv"
+            "$<TARGET_FILE_DIR:TigerTanda>/metadata.csv"
+        COMMENT "Copying metadata.csv to VDJ plugin output directory"
+    )
+endif()
