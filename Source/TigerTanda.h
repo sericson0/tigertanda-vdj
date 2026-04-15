@@ -9,6 +9,15 @@
 #define NODLLEXPORT
 #include "vdjPlugin8.h"
 
+// vdjPlugin8.h defines S_OK/E_FAIL on Mac but not these standard COM macros
+#ifdef VDJ_MAC
+#ifndef SUCCEEDED
+#define SUCCEEDED(hr) ((HRESULT)(hr) >= 0)
+#endif
+#ifndef FAILED
+#define FAILED(hr) ((HRESULT)(hr) < 0)
+#endif
+#endif
 #ifdef VDJ_WIN
 #include <windowsx.h>
 #include <uxtheme.h>
