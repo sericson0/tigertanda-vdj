@@ -608,6 +608,24 @@ static LRESULT CALLBACK candidatesListSubclassProc (HWND hwnd, UINT msg, WPARAM 
                 cycleBrowseSelection (p, shift ? -1 : +1);
                 return 0;
             }
+            if (wp == VK_DOWN)
+            {
+                int cur = (int) SendMessageW (hwnd, LB_GETCURSEL, 0, 0);
+                int cnt = (int) SendMessageW (hwnd, LB_GETCOUNT,  0, 0);
+                if ((cur < 0 || cur >= cnt - 1) && !p->results.empty())
+                {
+                    // At bottom of candidates (or empty): jump to results list
+                    SetFocus (p->hResultsList);
+                    if (p->selectedResultIdx < 0)
+                    {
+                        SendMessageW (p->hResultsList, LB_SETCURSEL, 0, 0);
+                        SendMessageW (GetParent (hwnd), WM_COMMAND,
+                                      MAKEWPARAM (IDC_RESULTS_LIST, LBN_SELCHANGE),
+                                      (LPARAM) p->hResultsList);
+                    }
+                    return 0;
+                }
+            }
             break;
         case WM_GETDLGCODE:
             return DLGC_WANTTAB | DLGC_WANTARROWS | DLGC_WANTCHARS
@@ -2577,7 +2595,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             bool sel  = ((int) di->itemID == p->selectedResultIdx);
             bool even = (di->itemID % 2 == 0);
 
-            fillRect (hdc, r, sel ? TCol::matchSel : even ? TCol::card : TCol::panel);
+            fillRect (hdc, r, sel ? TCol::selSubtle : even ? TCol::card : TCol::panel);
 
             if (sel)
             {

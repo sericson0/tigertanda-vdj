@@ -33,7 +33,6 @@ namespace TCol
     inline const COLORREF matchHigh   = RGB(30,  60,  34);
     inline const COLORREF matchMid    = RGB(60,  50,  35);
     inline const COLORREF matchLow    = RGB(60,  28,  28);
-    inline const COLORREF matchSel    = RGB(80,  50,  20);
     inline const COLORREF selSubtle   = RGB(34,  38,  54);
 
     // Shared semantic colors (added in surgical UI fix pass)
