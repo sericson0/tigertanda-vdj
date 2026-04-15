@@ -153,8 +153,38 @@ static std::wstring formatDateYMD (const std::wstring& d)
 //  Forward declarations
 // ─────────────────────────────────────────────────────────────────────────────
 
-@class TigerTandaMacUI;
 @class TTListView;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TigerTandaMacUI — Main NSView (interface declared early so TTListView can use it)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@interface TigerTandaMacUI : NSView <NSTextFieldDelegate>
+{
+@public
+    TigerTandaPlugin* plugin;
+
+    NSTextField* editTitle;
+    NSTextField* editArtist;
+    NSTextField* editYear;
+
+    NSScrollView* candScroll;
+    NSScrollView* resultsScroll;
+    NSScrollView* browseScroll;
+
+    TTListView* candList;
+    TTListView* resultsList;
+    TTListView* browseList;
+
+    NSTimer* browsePollTimer;
+    NSTimer* searchDebounceTimer;
+
+    NSButton* closeBtn;
+    NSButton* settingsBtn;
+}
+- (instancetype)initWithFrame:(NSRect)frame plugin:(TigerTandaPlugin*)p;
+- (void)layoutUI;
+@end
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TTListView — custom scrollable list with owner-drawn rows
@@ -476,33 +506,8 @@ static std::wstring formatDateYMD (const std::wstring& d)
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  TigerTandaMacUI — Main NSView
+//  TigerTandaMacUI — Main NSView (implementation)
 // ─────────────────────────────────────────────────────────────────────────────
-
-@interface TigerTandaMacUI : NSView <NSTextFieldDelegate>
-{
-@public
-    TigerTandaPlugin* plugin;
-
-    NSTextField* editTitle;
-    NSTextField* editArtist;
-    NSTextField* editYear;
-
-    NSScrollView* candScroll;
-    NSScrollView* resultsScroll;
-    NSScrollView* browseScroll;
-
-    TTListView* candList;
-    TTListView* resultsList;
-    TTListView* browseList;
-
-    NSTimer* browsePollTimer;
-    NSTimer* searchDebounceTimer;
-
-    NSButton* closeBtn;
-    NSButton* settingsBtn;
-}
-@end
 
 @implementation TigerTandaMacUI
 
