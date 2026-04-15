@@ -2877,3 +2877,78 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     return DefWindowProcW (hwnd, msg, wParam, lParam);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  UI wrapper implementations (Windows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TigerTandaPlugin::uiResetCandidatesList()
+{
+    if (hCandList)
+        SendMessageW (hCandList, LB_RESETCONTENT, 0, 0);
+}
+
+void TigerTandaPlugin::uiAddCandidateRow()
+{
+    if (hCandList)
+        SendMessageW (hCandList, LB_ADDSTRING, 0, (LPARAM) L"");
+}
+
+void TigerTandaPlugin::uiInvalidateCandidates()
+{
+    if (hCandList)
+        InvalidateRect (hCandList, nullptr, FALSE);
+}
+
+void TigerTandaPlugin::uiResetResultsList()
+{
+    if (hResultsList)
+        SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
+}
+
+void TigerTandaPlugin::uiAddResultRow()
+{
+    if (hResultsList)
+        SendMessageW (hResultsList, LB_ADDSTRING, 0, (LPARAM) L"");
+}
+
+void TigerTandaPlugin::uiResetBrowseList()
+{
+    if (hBrowseList)
+        SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
+}
+
+void TigerTandaPlugin::uiAddBrowseRow()
+{
+    if (hBrowseList)
+        SendMessageW (hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
+}
+
+void TigerTandaPlugin::uiInvalidateDialog()
+{
+    if (hDlg)
+        InvalidateRect (hDlg, nullptr, FALSE);
+}
+
+void TigerTandaPlugin::uiSetTimer (int timerId, int ms)
+{
+    if (hDlg)
+        SetTimer (hDlg, (UINT_PTR) timerId, (UINT) ms, nullptr);
+}
+
+void TigerTandaPlugin::uiKillTimer (int timerId)
+{
+    if (hDlg)
+        KillTimer (hDlg, (UINT_PTR) timerId);
+}
+
+void TigerTandaPlugin::uiSetEditText (int ctrlId, const std::wstring& text)
+{
+    HWND h = nullptr;
+    switch (ctrlId)
+    {
+        case IDC_EDIT_TITLE:  h = hEditTitle;  break;
+        case IDC_EDIT_ARTIST: h = hEditArtist; break;
+        case IDC_EDIT_YEAR:   h = hEditYear;   break;
+    }
+    if (h) SetWindowTextW (h, text.c_str());
+}

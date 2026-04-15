@@ -1,21 +1,29 @@
 #pragma once
 
+#ifdef VDJ_WIN
 #include <shlobj.h>
+#endif
+
 #include "TigerTandaHelpers.h"
 
 #define NODLLEXPORT
 #include "vdjPlugin8.h"
 
+#ifdef VDJ_WIN
 #include <windowsx.h>
 #include <uxtheme.h>
+#endif
+
 #include <fstream>
 #include <thread>
 #include <atomic>
 
+#ifdef VDJ_WIN
 #define IDR_LOGO 101
+#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Control IDs
+//  Control IDs (shared — used as logical IDs on both platforms)
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum CtrlId
@@ -34,10 +42,10 @@ enum CtrlId
     IDC_CHK_SAME_ORCHESTRA = 2305,
     IDC_CHK_SAME_LABEL     = 2306,
     IDC_CHK_SAME_TRACK     = 2307,
-    IDC_BTN_YEAR_TOGGLE    = 2403,  // toggles whether year range applies
-    IDC_BTN_YEAR_RANGE     = 2405,  // label showing current year range value
-    IDC_BTN_YEAR_MINUS     = 2406,  // year range spinner minus button
-    IDC_BTN_YEAR_PLUS      = 2407,  // year range spinner plus button
+    IDC_BTN_YEAR_TOGGLE    = 2403,
+    IDC_BTN_YEAR_RANGE     = 2405,
+    IDC_BTN_YEAR_MINUS     = 2406,
+    IDC_BTN_YEAR_PLUS      = 2407,
 
     // Matches tab
     IDC_RESULTS_LIST       = 2601,
@@ -45,7 +53,7 @@ enum CtrlId
     // Common
     IDC_BTN_CLOSE          = 2701,
 
-    // Tab strip (always in top bar)
+    // Tab strip
     IDC_BTN_TAB_SETTINGS   = 2805,
 
     // Browse tab
@@ -54,84 +62,77 @@ enum CtrlId
     IDC_BTN_ADD_END        = 2903,
 
     // Settings: "How it works" sub-tabs
-    IDC_BTN_HOW_TAB_0      = 2501,  // Overview
-    IDC_BTN_HOW_TAB_1      = 2502,  // Track
-    IDC_BTN_HOW_TAB_2      = 2503,  // Matches
-    IDC_BTN_HOW_TAB_3      = 2504,  // Browser
-    IDC_BTN_HOW_TAB_4      = 2505,  // Filters
+    IDC_BTN_HOW_TAB_0      = 2501,
+    IDC_BTN_HOW_TAB_1      = 2502,
+    IDC_BTN_HOW_TAB_2      = 2503,
+    IDC_BTN_HOW_TAB_3      = 2504,
+    IDC_BTN_HOW_TAB_4      = 2505,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Timer IDs
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr UINT_PTR TIMER_BROWSE_POLL     = 1;
-inline constexpr UINT_PTR TIMER_SMART_SEARCH   = 2;
-inline constexpr UINT_PTR TIMER_WAVE_UPDATE    = 3;
-inline constexpr UINT_PTR TIMER_SEARCH_DEBOUNCE = 4;
-inline constexpr UINT_PTR TIMER_HOVER_POPUP     = 5;  // 1s dwell before showing hover popup
-inline constexpr UINT_PTR TIMER_MATCH_SELECT    = 6;  // 250ms debounce before firing smart search from keyboard-driven match selection
+inline constexpr int TT_TIMER_BROWSE_POLL     = 1;
+inline constexpr int TT_TIMER_SMART_SEARCH    = 2;
+inline constexpr int TT_TIMER_WAVE_UPDATE     = 3;
+inline constexpr int TT_TIMER_SEARCH_DEBOUNCE = 4;
+inline constexpr int TT_TIMER_HOVER_POPUP     = 5;
+inline constexpr int TT_TIMER_MATCH_SELECT    = 6;
+
+#ifdef VDJ_WIN
+// Windows timer IDs (backward compat — existing UI code uses these)
+inline constexpr UINT_PTR TIMER_BROWSE_POLL     = TT_TIMER_BROWSE_POLL;
+inline constexpr UINT_PTR TIMER_SMART_SEARCH    = TT_TIMER_SMART_SEARCH;
+inline constexpr UINT_PTR TIMER_WAVE_UPDATE     = TT_TIMER_WAVE_UPDATE;
+inline constexpr UINT_PTR TIMER_SEARCH_DEBOUNCE = TT_TIMER_SEARCH_DEBOUNCE;
+inline constexpr UINT_PTR TIMER_HOVER_POPUP     = TT_TIMER_HOVER_POPUP;
+inline constexpr UINT_PTR TIMER_MATCH_SELECT    = TT_TIMER_MATCH_SELECT;
+#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Font size constants (pt — passed to createFont)
+//  Font size constants (pt)
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline constexpr int FONT_SIZE_NORMAL = 13;  // fontNormal / fontBold
-inline constexpr int FONT_SIZE_SMALL  = 11;  // fontSmall (retained for minor labels)
-inline constexpr int FONT_SIZE_DETAIL = 15;  // fontDetail — secondary rows (+4pt from small)
-inline constexpr int FONT_SIZE_BRAND  = 17;  // fontTitle — Tiger Tanda brand text
+inline constexpr int FONT_SIZE_NORMAL = 13;
+inline constexpr int FONT_SIZE_SMALL  = 11;
+inline constexpr int FONT_SIZE_DETAIL = 15;
+inline constexpr int FONT_SIZE_BRAND  = 17;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Layout constants (compact / tab mode only)
+//  Layout constants
 // ─────────────────────────────────────────────────────────────────────────────
 
 inline constexpr int DLG_H          = 370;
-inline constexpr int TOP_GAP        = 4;     // compact gap below top bar
+inline constexpr int TOP_GAP        = 4;
 inline constexpr int DLG_W          = 700;
-inline constexpr int TOP_H          = 30;    // compact top bar
+inline constexpr int TOP_H          = 30;
 inline constexpr int PAD            = 8;
 inline constexpr int BTN_H          = 24;
 inline constexpr int EDIT_H         = 24;
-inline constexpr int BRAND_H        = 26;    // Tiger Tanda brand text row at bottom
-inline constexpr int CAND_ITEM_H    = 24;    // 13pt row
-inline constexpr int TAB_BTN_H      = 20;    // top tab strip height
-inline constexpr int RESULT_ITEM_H  = 24;    // 13pt row
-inline constexpr int BROWSE_ITEM_H  = 46;    // tall rows: 2 text rows + album art thumbnail
-inline constexpr int DETAIL_BOX_H   = 100;   // 5-row uniform 13pt: Title + Bandleader·Singer + Date·Genre + Label + Group
-inline constexpr int PRE_WAVE_H     = 20;    // prelisten waveform height
-inline constexpr int TRACK_SEARCH_GAP = 4;   // reduced gap (was 14)
-inline constexpr int LEFT_COL_PCT   = 60;    // left column percentage
-
-// Shared year column width used by candidates / results / browse list rows
-// and by the painted column header above the search row. Keeping this
-// centralized ensures the three lists stay pixel-aligned with each other
-// and with the "YEAR" header.
+inline constexpr int BRAND_H        = 26;
+inline constexpr int CAND_ITEM_H    = 24;
+inline constexpr int TAB_BTN_H      = 20;
+inline constexpr int RESULT_ITEM_H  = 24;
+inline constexpr int BROWSE_ITEM_H  = 46;
+inline constexpr int DETAIL_BOX_H   = 100;
+inline constexpr int PRE_WAVE_H     = 20;
+inline constexpr int TRACK_SEARCH_GAP = 4;
+inline constexpr int LEFT_COL_PCT   = 60;
 inline constexpr int YEAR_COL_W     = 52;
-
-// Detail box internal padding / row gap — used by drawResultDetailBox and
-// any code that reasons about its layout.
 inline constexpr int DETAIL_PAD_X   = 6;
 inline constexpr int DETAIL_PAD_Y   = 3;
 inline constexpr int DETAIL_ROW_GAP = 1;
-
-// Height of the "VDJ BROWSER RESULTS" header strip on the right column:
-// the painted header label lives in this strip. With the FIND IN VDJ
-// button removed, the strip is now a slim label row.
 inline constexpr int BROWSE_HEADER_H = 18;
-
-// Extra vertical padding above the prelisten/ADD row so it doesn't crowd
-// the browse list bottom.
 inline constexpr int PRELISTEN_TOP_GAP = 8;
-
-// Height of the metadata-load-failed banner (drawn at the top of the
-// main view when p->metadataLoadFailed is true).
 inline constexpr int META_BANNER_H   = 22;
 
-// Window class name
+#ifdef VDJ_WIN
 inline constexpr const wchar_t* WND_CLASS = L"TigerTandaVdjDialog";
+#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Browse history item
+//  Browse history item (shared)
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct BrowseItem
@@ -144,9 +145,19 @@ struct BrowseItem
     std::wstring comment;
     int   stars        = 0;
     int   playCount    = 0;
-    int   browserIndex = -1;   // original index in VDJ browser list
-    float score        = 0.0f; // smart search relevance score
+    int   browserIndex = -1;
+    float score        = 0.0f;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Rect type for layout (cross-platform)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#ifdef VDJ_MAC
+struct TTRect { int left, top, right, bottom; };
+#else
+typedef RECT TTRect;
+#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Plugin class
@@ -175,26 +186,28 @@ public:
     void runTandaSearch();
     void resetAll();
     void runSmartSearch();
-    // Browser search workflow — saves current folder, fires VDJ search,
-    // schedules runSmartSearch timer. runSmartSearch reads results and
-    // restores the saved folder.
     void triggerBrowserSearch (const TgRecord& rec);
-    // ADD button — re-issues the last search, scrolls to the selected
-    // browseItem's stored browserIndex, sends the supplied VDJ command
-    // (default "playlist_add"; right-click passes "sidelist_add"), restores
-    // folder.
     void addSelectedBrowseToAutomix (const char* vdjCommand = "playlist_add");
-    // Toggle the browse listbox visibility based on browseItems.empty().
-    // When empty, the main window paints a placeholder in its place.
     void syncBrowseListVisibility();
+
+    // UI wrapper methods (platform-specific implementations in UI files)
+    void uiResetCandidatesList();
+    void uiAddCandidateRow();
+    void uiInvalidateCandidates();
+    void uiResetResultsList();
+    void uiAddResultRow();
+    void uiResetBrowseList();
+    void uiAddBrowseRow();
+    void uiInvalidateDialog();
+    void uiSetTimer (int timerId, int ms);
+    void uiKillTimer (int timerId);
+    void uiSetEditText (int ctrlId, const std::wstring& text);
 
     // Settings (TigerTanda.cpp)
     void loadSettings();
     void saveSettings();
     void detectMetadataFolder();
     void loadMetadata();
-
-    // UI helpers (TigerTandaUI.cpp)
 
     // Parameter IDs for VDJ parameter panel
     enum ParamId { PID_SEARCH = 0, PID_FIND, PID_RESET };
@@ -219,27 +232,22 @@ public:
     bool filterSameLabel     = false;
     bool filterSameTrack     = false;
     int  yearRange           = 5;
-    bool filterUseYearRange  = true;   // whether year range filter applies
+    bool filterUseYearRange  = true;
 
     // ── Tab ─────────────────────────────────────────────────────────────────
-    int  activeTab    = 0;    // 0=Main, 1=Settings
-    int  activeHowTab = 0;    // 0=Overview, 1=Track, 2=Matches, 3=Browser, 4=Filters
+    int  activeTab    = 0;
+    int  activeHowTab = 0;
 
-    // ── Cached layout Ys (computed once in applyLayout; read in WM_PAINT) ───
-    // Avoid recomputing the same layout math in two places and going out of
-    // sync. All are in client-area coords.
-    int  columnHeaderY       = 0;  // "TITLE / ARTIST / YEAR" column headers
-    int  matchHeaderY        = 0;  // "MATCHES (N)" header
-    int  browseResultsHeaderY= 0;  // "VDJ BROWSER RESULTS" header (right column)
-    RECT metaBannerRect      = {}; // banner rect (empty when not shown)
+    // ── Cached layout Ys ────────────────────────────────────────────────────
+    int  columnHeaderY       = 0;
+    int  matchHeaderY        = 0;
+    int  browseResultsHeaderY= 0;
+    TTRect metaBannerRect    = {};
 
-    // Settings tab header/logo Ys — computed in applyLayout so WM_PAINT can
-    // align painted sub-group headers with the control rows without
-    // duplicating the layout math.
-    int  settingsMainHeaderY    = 0;  // "FILTERS" — main left-column header
-    int  settingsArtistsHeaderY = 0;  // "DEFAULTS" sub-header
-    int  settingsYearHeaderY    = 0;  // (unused — year row has no sub-header)
-    int  settingsOtherHeaderY   = 0;  // "OTHER" sub-header
+    int  settingsMainHeaderY    = 0;
+    int  settingsArtistsHeaderY = 0;
+    int  settingsYearHeaderY    = 0;
+    int  settingsOtherHeaderY   = 0;
     int  settingsLogoY          = 0;
     int  settingsLogoH          = 0;
 
@@ -249,55 +257,48 @@ public:
     std::wstring lastSeenBrowsePath;
 
     // ── Browse history ───────────────────────────────────────────────────────
-    std::vector<BrowseItem> browseItems;   // current VDJ browser list, cap ~200
-    int  browseListCount = -1;             // cached file_count for change detection
-    std::wstring lastBrowseFolder;         // cached get_browsed_folder_path for change detection
+    std::vector<BrowseItem> browseItems;
+    int  browseListCount = -1;
+    std::wstring lastBrowseFolder;
 
-    // ── Smart search (ranked VDJ browser results) ────────────────────────────
+    // ── Smart search ─────────────────────────────────────────────────────────
     std::wstring searchTargetTitle;
     std::wstring searchTargetArtist;
     std::wstring searchTargetYear;
     bool         smartSearchPending = false;
-    // Remember last search target so we don't re-fire on redundant requests
     std::wstring lastSmartSearchTitle;
     std::wstring lastSmartSearchArtist;
-    // Monotonically increasing token — runSmartSearch checks that the token
-    // it was fired for is still current before applying its results, so a
-    // user clicking a different match mid-flight cancels stale results.
     int smartSearchToken = 0;
     int smartSearchActiveToken = 0;
-    int smartSearchRetryCount = 0;  // how many times we've waited for VDJ
-    bool smartSearchNoResults = false;  // true if the last search timed out / empty
-    // Folder path saved at start of a search cycle; restored when done
+    int smartSearchRetryCount = 0;
+    bool smartSearchNoResults = false;
     std::wstring savedBrowseFolder;
-    // Raw VDJ search query string used to populate the current browseItems.
-    // ADD needs this to re-issue the same search so saved browserIndex
-    // values still line up with VDJ's result order.
     std::wstring lastBrowserSearchQuery;
 
     // ── Prelisten ────────────────────────────────────────────────────────────
     bool              prelistenActive    = false;
     bool              prelistenSeeking   = false;
     double            prelistenPos       = 0.0;
-    RECT              prelistenWaveRect  = {};
+    TTRect            prelistenWaveRect  = {};
     std::vector<int>  prelistenWaveBins;
     std::wstring      prelistenWavePath;
 
     // ── Settings ─────────────────────────────────────────────────────────────
     std::wstring metadataFolder;
     fs::path     settingsPath;
-    // True if loadMetadata() could not find/open metadata.csv or it was empty.
-    // Read by the paint handler to render a warning banner; cleared on every
-    // successful load.
     bool         metadataLoadFailed = false;
-
-    // Async metadata loading. Set to true while the background loader is
-    // running; flipped back to false from the worker thread when finished.
-    // Callers that read from `matcher` must check this flag first.
     std::atomic<bool> metadataLoading { false };
     std::thread       metadataThread;
 
-    // ── Window handles ───────────────────────────────────────────────────────
+    bool dialogRequestedOpen  = true;
+    bool suppressNextHideSync = false;
+    bool suppressEditChange   = false;
+    bool resultsLastInputWasMouse = false;
+
+    // ── Platform-specific UI state ───────────────────────────────────────────
+
+#ifdef VDJ_WIN
+    // Window handles
     HWND hDlg              = nullptr;
     HWND hEditTitle        = nullptr;
     HWND hEditArtist       = nullptr;
@@ -322,38 +323,46 @@ public:
     HWND hBtnYearPlus      = nullptr;
     HWND hBtnHowTabs[5]    = {};
     HWND hTooltip          = nullptr;
-    HWND hHoverPopup       = nullptr;   // themed custom popup window for browse-row metadata
-    int  hoverPopupItem    = -1;        // browse row the popup is currently keyed on (-1 = hidden)
-    int  hoverPendingItem  = -1;        // row queued by dwell timer but not yet shown
-    POINT hoverPendingPt   = {};        // screen position captured when dwell started
-    HWND hoveredBtn        = nullptr;   // currently hovered owner-draw button (for hover highlight)
+    HWND hHoverPopup       = nullptr;
+    int  hoverPopupItem    = -1;
+    int  hoverPendingItem  = -1;
+    POINT hoverPendingPt   = {};
+    HWND hoveredBtn        = nullptr;
 
-    // ── GDI resources ────────────────────────────────────────────────────────
-    HFONT fontNormal    = nullptr;  // FONT_SIZE_NORMAL pt regular
-    HFONT fontBold      = nullptr;  // FONT_SIZE_NORMAL pt bold
-    HFONT fontSmall     = nullptr;  // FONT_SIZE_SMALL pt regular
-    HFONT fontSmallBold = nullptr;  // FONT_SIZE_SMALL pt bold (inline bold in Settings content)
-    HFONT fontDetail    = nullptr;  // FONT_SIZE_DETAIL pt regular (secondary rows, +4pt)
-    HFONT fontTitle     = nullptr;  // FONT_SIZE_BRAND pt bold (Tiger Tanda brand text)
+    // GDI resources
+    HFONT fontNormal    = nullptr;
+    HFONT fontBold      = nullptr;
+    HFONT fontSmall     = nullptr;
+    HFONT fontSmallBold = nullptr;
+    HFONT fontDetail    = nullptr;
+    HFONT fontTitle     = nullptr;
     HBRUSH panelBrush     = nullptr;
     HBRUSH cardBrush      = nullptr;
     HBRUSH searchBoxBrush = nullptr;
     ULONG_PTR gdiplusToken = 0;
-    void*     logoImage    = nullptr;  // Gdiplus::Image* cached logo (opaque to avoid header dep)
+    void*     logoImage    = nullptr;
+#endif
 
-    bool dialogRequestedOpen  = true;
-    bool suppressNextHideSync = false;
-    bool suppressEditChange   = false;  // true while polling updates edit boxes
-    // True if the most recent input that landed focus on the matches listbox
-    // was a mouse click (vs a keyboard arrow). Used by the LBN_SELCHANGE
-    // handler to decide between firing the smart search immediately (mouse)
-    // or debouncing by 250ms (keyboard scroll).
-    bool resultsLastInputWasMouse = false;
+#ifdef VDJ_MAC
+    void* macUI = nullptr;  // opaque TigerTandaMacUI* (avoids ObjC in header)
+#endif
 };
 
-// Window procedure (TigerTandaUI.cpp)
+// ─────────────────────────────────────────────────────────────────────────────
+//  Platform-specific declarations
+// ─────────────────────────────────────────────────────────────────────────────
+
+#ifdef VDJ_WIN
 LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void ensureTandaWindowClass (HINSTANCE hInst);
+#endif
 
-// DLL entry point
+#ifdef VDJ_MAC
+void createMacUI (TigerTandaPlugin* p, void* vdjWindow);
+void destroyMacUI (TigerTandaPlugin* p);
+#endif
+
+// DLL entry point (cross-platform via VDJ SDK macros)
+#ifdef VDJ_WIN
 STDAPI DllGetClassObject (REFCLSID rclsid, REFIID riid, LPVOID* ppObject);
+#endif

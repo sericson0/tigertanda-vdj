@@ -9,8 +9,16 @@
 #include <cstdio>
 #include <filesystem>
 
+#if defined(_WIN32)
 #pragma comment(lib, "gdiplus.lib")
 using namespace Gdiplus;
+#endif
+
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <pwd.h>
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -20,6 +28,7 @@ namespace fs = std::filesystem;
 
 TigerTandaPlugin::TigerTandaPlugin()
 {
+#if defined(_WIN32)
     INITCOMMONCONTROLSEX icc {};
     icc.dwSize = sizeof (icc);
     icc.dwICC = ICC_BAR_CLASSES | ICC_WIN95_CLASSES;
@@ -32,7 +41,6 @@ TigerTandaPlugin::TigerTandaPlugin()
     fontSmallBold = createFont (FONT_SIZE_SMALL,  FW_BOLD);
     fontDetail    = createFont (FONT_SIZE_DETAIL);
 
-    // Fallbacks so later SelectObject calls don't silently fail if createFont returned null
     if (!fontNormal)    fontNormal    = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
     if (!fontBold)      fontBold      = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
     if (!fontTitle)     fontTitle     = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
@@ -50,10 +58,13 @@ TigerTandaPlugin::TigerTandaPlugin()
 
     Gdiplus::GdiplusStartupInput gdiplusInput;
     Gdiplus::GdiplusStartup (&gdiplusToken, &gdiplusInput, nullptr);
+#endif
+    // macOS: fonts and resources are created lazily in TigerTandaUI_Mac.mm
 }
 
 TigerTandaPlugin::~TigerTandaPlugin()
 {
+#if defined(_WIN32)
     if (hDlg && IsWindow (hDlg)) DestroyWindow (hDlg);
     if (fontNormal)    DeleteObject (fontNormal);
     if (fontBold)      DeleteObject (fontBold);
@@ -66,9 +77,12 @@ TigerTandaPlugin::~TigerTandaPlugin()
     if (searchBoxBrush) DeleteObject (searchBoxBrush);
     delete reinterpret_cast<Gdiplus::Image*> (logoImage);
     logoImage = nullptr;
-    // Must free cached bitmaps before GDI+ shuts down
     CoverArt::shutdown();
     if (gdiplusToken) Gdiplus::GdiplusShutdown (gdiplusToken);
+#elif defined(__APPLE__)
+    destroyMacUI (this);
+    CoverArt::shutdown();
+#endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,23 +91,72 @@ TigerTandaPlugin::~TigerTandaPlugin()
 
 HRESULT VDJ_API TigerTandaPlugin::OnLoad()
 {
+#if defined(_WIN32)
     wchar_t dllPath[MAX_PATH] = {};
     GetModuleFileNameW (hInstance, dllPath, MAX_PATH);
     fs::path dllDir = fs::path (dllPath).parent_path();
     settingsPath = dllDir / L"tigertanda_settings.ini";
+#elif defined(__APPLE__)
+    // hInstance is a CFBundleRef on Mac
+    CFURLRef bundleURL = CFBundleCopyBundleURL ((CFBundleRef) hInstance);
+    if (bundleURL)
+    {
+        char bundlePath[1024] = {};
+        CFURLGetFileSystemRepresentation (bundleURL, true, (UInt8*) bundlePath, sizeof (bundlePath));
+        CFRelease (bundleURL);
+        fs::path bundleDir = fs::path (bundlePath).parent_path();
+        settingsPath = bundleDir / "tigertanda_settings.ini";
+    }
+#endif
 
     loadSettings();
+
+#if defined(_WIN32)
     if (metadataFolder.empty())
-        metadataFolder = dllDir.wstring();
+    {
+        wchar_t dllPath2[MAX_PATH] = {};
+        GetModuleFileNameW (hInstance, dllPath2, MAX_PATH);
+        metadataFolder = fs::path (dllPath2).parent_path().wstring();
+    }
+#elif defined(__APPLE__)
+    if (metadataFolder.empty())
+    {
+        CFURLRef bundleURL2 = CFBundleCopyBundleURL ((CFBundleRef) hInstance);
+        if (bundleURL2)
+        {
+            char bp[1024] = {};
+            CFURLGetFileSystemRepresentation (bundleURL2, true, (UInt8*) bp, sizeof (bp));
+            CFRelease (bundleURL2);
+            metadataFolder = toWide (fs::path (bp).parent_path().string());
+        }
+    }
+#endif
+
     detectMetadataFolder();
-    // If metadata.csv still not found (e.g. old settings pointed at a 'metadata/' subdir),
-    // fall back to the DLL's own directory.
+
+    // If metadata.csv still not found, fall back to the plugin's own directory
     {
         std::error_code ec;
         fs::path csvTest = fs::path (metadataFolder) / L"metadata.csv";
         if (!fs::is_regular_file (csvTest, ec))
-            metadataFolder = dllDir.wstring();
+        {
+#if defined(_WIN32)
+            wchar_t dp[MAX_PATH] = {};
+            GetModuleFileNameW (hInstance, dp, MAX_PATH);
+            metadataFolder = fs::path (dp).parent_path().wstring();
+#elif defined(__APPLE__)
+            CFURLRef bu = CFBundleCopyBundleURL ((CFBundleRef) hInstance);
+            if (bu)
+            {
+                char p[1024] = {};
+                CFURLGetFileSystemRepresentation (bu, true, (UInt8*) p, sizeof (p));
+                CFRelease (bu);
+                metadataFolder = toWide (fs::path (p).parent_path().string());
+            }
+#endif
+        }
     }
+
     loadMetadata();
 
     DeclareParameterButton (&paramSearch, PID_SEARCH, "Search",       "Search");
@@ -116,23 +179,22 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetPluginInfo (TVdjPluginInfo8* info)
 
 ULONG VDJ_API TigerTandaPlugin::Release()
 {
-    // Join the metadata loader thread before teardown so the matcher isn't
-    // written to while ~TigerTandaPlugin is running.
     if (metadataThread.joinable())
         metadataThread.join();
 
     delete this;
 
-    // Unregister the main window class after the instance is destroyed.
-    // (Hover popup class unregister is handled separately.)
+#if defined(_WIN32)
     HINSTANCE hInst = GetModuleHandleW (nullptr);
     UnregisterClassW (WND_CLASS, hInst);
+#endif
 
     return S_OK;
 }
 
 HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* pluginInterface)
 {
+#if defined(_WIN32)
     if (hDlg && IsWindow (hDlg))
     {
         dialogRequestedOpen = true;
@@ -179,6 +241,23 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
         pluginInterface->hWnd = hDlg;
         return S_OK;
     }
+#elif defined(__APPLE__)
+    // On Mac, VDJ_WINDOW is void*. We get the VDJ window from the API.
+    double hwndVal = 0;
+    void* vdjWindow = nullptr;
+    if (GetInfo ("get hwnd", &hwndVal) == S_OK && hwndVal != 0)
+        vdjWindow = (void*) (intptr_t) hwndVal;
+
+    if (!macUI)
+        createMacUI (this, vdjWindow);
+
+    if (macUI)
+    {
+        pluginInterface->Type = VDJINTERFACE_DIALOG;
+        pluginInterface->hWnd = (VDJ_WINDOW) macUI;
+        return S_OK;
+    }
+#endif
 
     return E_NOTIMPL;
 }
@@ -189,20 +268,15 @@ HRESULT VDJ_API TigerTandaPlugin::OnParameter (int id)
     {
         case PID_SEARCH:
         {
-            // Use last seen title/artist from polling
             if (!lastSeenTitle.empty())
                 runIdentification (lastSeenTitle, lastSeenArtist);
             break;
         }
         case PID_FIND:
-            // Re-fire the library search for whatever match the user has
-            // currently selected. Useful as a VDJ keyboard hotkey.
             if (selectedResultIdx >= 0
                 && selectedResultIdx < (int) results.size()
                 && !smartSearchPending)
             {
-                // Force re-fire by clearing last-search memo (triggerBrowserSearch
-                // bails early on a repeated target otherwise).
                 lastSmartSearchTitle.clear();
                 lastSmartSearchArtist.clear();
                 triggerBrowserSearch (results[selectedResultIdx]);
@@ -230,9 +304,6 @@ std::wstring TigerTandaPlugin::vdjGetString (const char* query)
 
 double TigerTandaPlugin::vdjGetValue (const char* query)
 {
-    // NOTE: callers cannot distinguish a failed GetInfo() from a legitimate
-    // 0.0 result — this is acceptable for the current call sites, which all
-    // treat 0 as "nothing yet / not available".
     double val = 0.0;
     HRESULT hr = GetInfo (query, &val);
     if (FAILED (hr))
@@ -260,6 +331,7 @@ void TigerTandaPlugin::detectMetadataFolder()
         return;
     }
 
+#if defined(_WIN32)
     // Try %APPDATA%/VirtualDJ/Plugins64/
     wchar_t appData[MAX_PATH] = {};
     if (SHGetFolderPathW (nullptr, CSIDL_APPDATA, nullptr, 0, appData) == S_OK)
@@ -283,17 +355,30 @@ void TigerTandaPlugin::detectMetadataFolder()
             return;
         }
     }
+#elif defined(__APPLE__)
+    // Try ~/Library/Application Support/VirtualDJ/Plugins64/
+    const char* home = getenv ("HOME");
+    if (!home) home = getpwuid (getuid())->pw_dir;
+    if (home)
+    {
+        fs::path vdjDir = fs::path (home) / "Library" / "Application Support" / "VirtualDJ" / "Plugins64";
+        if (fs::is_regular_file (vdjDir / "metadata.csv", ec))
+        {
+            metadataFolder = toWide (vdjDir.string());
+            return;
+        }
+    }
+#endif
 }
 
 void TigerTandaPlugin::loadMetadata()
 {
-    metadataLoadFailed = true;  // assume failure until proven otherwise
+    metadataLoadFailed = true;
     if (metadataFolder.empty()) return;
     std::error_code ec;
     fs::path csvPath = fs::path (metadataFolder) / L"metadata.csv";
     if (!fs::is_regular_file (csvPath, ec)) return;
 
-    // If a previous load is still running, join it before kicking off a new one.
     if (metadataThread.joinable())
         metadataThread.join();
 
@@ -366,9 +451,8 @@ void TigerTandaPlugin::saveSettings()
 {
     if (settingsPath.empty()) return;
 
-    // Write to a sibling .tmp file first, then atomically replace the target.
-    // On rename failure the original file is preserved untouched.
-    std::wstring tmpPath = settingsPath.wstring() + L".tmp";
+    fs::path tmpPath = settingsPath;
+    tmpPath += ".tmp";
 
     {
         std::ofstream out (tmpPath, std::ios::trunc);
@@ -389,23 +473,23 @@ void TigerTandaPlugin::saveSettings()
         if (!out.good())
         {
             out.close();
-            DeleteFileW (tmpPath.c_str());
+            std::error_code ec;
+            fs::remove (tmpPath, ec);
             return;
         }
     }
 
-    if (!MoveFileExW (tmpPath.c_str(), settingsPath.wstring().c_str(),
-                      MOVEFILE_REPLACE_EXISTING))
-    {
-        // Rename failed — clean up the temp file; original settings remain intact.
-        DeleteFileW (tmpPath.c_str());
-    }
+    std::error_code ec;
+    fs::rename (tmpPath, settingsPath, ec);
+    if (ec)
+        fs::remove (tmpPath, ec);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DLL Entry Point
 // ─────────────────────────────────────────────────────────────────────────────
 
+#if defined(_WIN32)
 STDAPI DllGetClassObject (REFCLSID rclsid, REFIID riid, LPVOID* ppObject)
 {
     if (memcmp (&rclsid, &CLSID_VdjPlugin8, sizeof (GUID)) == 0
@@ -416,3 +500,15 @@ STDAPI DllGetClassObject (REFCLSID rclsid, REFIID riid, LPVOID* ppObject)
     }
     return CLASS_E_CLASSNOTAVAILABLE;
 }
+#elif defined(__APPLE__)
+extern "C" VDJ_EXPORT HRESULT VDJ_API DllGetClassObject (const GUID& rclsid, const GUID& riid, void** ppObject)
+{
+    if (memcmp (&rclsid, &CLSID_VdjPlugin8, sizeof (GUID)) == 0
+        && memcmp (&riid, &IID_IVdjPluginBasic8, sizeof (GUID)) == 0)
+    {
+        *ppObject = new TigerTandaPlugin();
+        return S_OK;
+    }
+    return CLASS_E_CLASSNOTAVAILABLE;
+}
+#endif
