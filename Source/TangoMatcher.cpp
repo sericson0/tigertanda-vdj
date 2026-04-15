@@ -26,8 +26,22 @@ std::wstring TangoMatcher::utf8ToWide (const std::string& utf8)
     MultiByteToWideChar (CP_UTF8, 0, utf8.c_str(), (int) utf8.size(), &wide[0], len);
     return wide;
 #else
+    // Proper UTF-8 decode for macOS (wchar_t is 4 bytes = UTF-32)
+    if (utf8.empty()) return {};
     std::wstring result;
-    for (auto c : utf8) result += (wchar_t)(unsigned char) c;
+    result.reserve (utf8.size());
+    size_t i = 0;
+    while (i < utf8.size())
+    {
+        uint32_t cp = 0;
+        unsigned char c = (unsigned char) utf8[i];
+        if (c < 0x80)      { cp = c; i += 1; }
+        else if (c < 0xC0) { cp = L'?'; i += 1; }
+        else if (c < 0xE0) { cp = c & 0x1F; if (i+1 < utf8.size()) cp = (cp << 6) | (utf8[i+1] & 0x3F); i += 2; }
+        else if (c < 0xF0) { cp = c & 0x0F; if (i+1 < utf8.size()) cp = (cp << 6) | (utf8[i+1] & 0x3F); if (i+2 < utf8.size()) cp = (cp << 6) | (utf8[i+2] & 0x3F); i += 3; }
+        else               { cp = c & 0x07; if (i+1 < utf8.size()) cp = (cp << 6) | (utf8[i+1] & 0x3F); if (i+2 < utf8.size()) cp = (cp << 6) | (utf8[i+2] & 0x3F); if (i+3 < utf8.size()) cp = (cp << 6) | (utf8[i+3] & 0x3F); i += 4; }
+        result += (wchar_t) cp;
+    }
     return result;
 #endif
 }

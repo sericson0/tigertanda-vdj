@@ -4,6 +4,7 @@
 //==============================================================================
 
 #include "TigerTanda.h"
+#include "CoverArt.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -44,10 +45,18 @@ static int parseYear (const std::wstring& dateStr)
     return 0;
 }
 
-// Case-insensitive wide-string comparison
-static bool wiequal (const std::wstring& a, const std::wstring& b)
+// Windows-aware filepath equality: case-insensitive and slash-agnostic.
+static bool pathEq (const std::wstring& a, const std::wstring& b)
 {
-    return _wcsicmp (a.c_str(), b.c_str()) == 0;
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        wchar_t ca = a[i], cb = b[i];
+        if (ca == L'/') ca = L'\\';
+        if (cb == L'/') cb = L'\\';
+        if (towlower (ca) != towlower (cb)) return false;
+    }
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,29 +67,24 @@ void TigerTandaPlugin::runIdentification (const std::wstring& title, const std::
 {
     candidates.clear();
     confirmedIdx = -1;
-    // NOTE: results and selectedResultIdx are intentionally NOT cleared here.
-    // The results panel only updates when the user confirms a candidate.
 
     if (title.empty()) return;
 
-    // Use artist-aware search when artist is available
     if (!artist.empty())
-        candidates = matcher.findCandidatesForArtist (title, artist, 5, 40.0f);
+        candidates = matcher.findCandidatesForArtist (title, artist, 3, 40.0f);
 
-    // Fallback: title-only search
     if (candidates.empty())
-        candidates = matcher.findCandidates (title, 5, 40.0f);
+        candidates = matcher.findCandidates (title, 3, 40.0f);
 
-    // Refresh candidates listbox
-    if (hCandList)
-    {
-        SendMessageW (hCandList, LB_RESETCONTENT, 0, 0);
-        for (int i = 0; i < (int) candidates.size(); ++i)
-        {
-            // LB_ADDSTRING with an empty string (owner-draw reads from candidates[])
-            SendMessageW (hCandList, LB_ADDSTRING, 0, (LPARAM) L"");
-        }
-    }
+    if ((int) candidates.size() > 3)
+        candidates.resize (3);
+
+    uiResetCandidatesList();
+    for (int i = 0; i < (int) candidates.size(); ++i)
+        uiAddCandidateRow();
+
+    if (!candidates.empty())
+        confirmCandidate (0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,11 +96,7 @@ void TigerTandaPlugin::confirmCandidate (int idx)
     if (idx < 0 || idx >= (int) candidates.size()) return;
     confirmedIdx = idx;
 
-    // Force repaint of candidates list so previous highlight clears
-    if (hCandList)
-        InvalidateRect (hCandList, nullptr, FALSE);
-
-    // Auto-run tanda search
+    uiInvalidateCandidates();
     runTandaSearch();
 }
 
@@ -108,15 +108,13 @@ void TigerTandaPlugin::runTandaSearch()
 {
     results.clear();
     selectedResultIdx = -1;
+    selectedBrowseIdx = -1;
 
     if (confirmedIdx < 0 || confirmedIdx >= (int) candidates.size())
     {
-        // No reference confirmed — nothing to do
-        if (hResultsList)
-            SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
-        if (hDlg)
-            MessageBoxW (hDlg, L"Please confirm a reference song first by clicking a candidate.",
-                         L"TigerTanda", MB_OK | MB_ICONINFORMATION);
+        results.clear();
+        uiResetResultsList();
+        uiInvalidateDialog();
         return;
     }
 
@@ -128,22 +126,19 @@ void TigerTandaPlugin::runTandaSearch()
     {
         const TgRecord& rec = matcher.getRecord (i);
 
-        // Exclude the reference song itself
-        if (wiequal (rec.title, ref.title)
-            && wiequal (rec.bandleader, ref.bandleader)
-            && wiequal (rec.year, ref.year))
+        if (wiEqual (rec.title, ref.title)
+            && wiEqual (rec.bandleader, ref.bandleader)
+            && wiEqual (rec.year, ref.year))
             continue;
 
-        // Optional filters
-        if (filterSameArtist    && !wiequal (rec.bandleader, ref.bandleader)) continue;
-        if (filterSameSinger    && !wiequal (rec.singer,     ref.singer))     continue;
-        if (filterSameGrouping  && !wiequal (rec.grouping,   ref.grouping))   continue;
-        if (filterSameGenre     && !wiequal (rec.genre,      ref.genre))      continue;
-        if (filterSameOrchestra && !wiequal (rec.orchestra,  ref.orchestra))  continue;
-        if (filterSameLabel     && !wiequal (rec.label,      ref.label))      continue;
-        if (filterSameTrack     && !wiequal (rec.title,      ref.title))      continue;
+        if (filterSameArtist    && !wiEqual (rec.bandleader, ref.bandleader)) continue;
+        if (filterSameSinger    && !wiEqual (rec.singer,     ref.singer))     continue;
+        if (filterSameGrouping  && !wiEqual (rec.grouping,   ref.grouping))   continue;
+        if (filterSameGenre     && !wiEqual (rec.genre,      ref.genre))      continue;
+        if (filterSameOrchestra && !wiEqual (rec.orchestra,  ref.orchestra))  continue;
+        if (filterSameLabel     && !wiEqual (rec.label,      ref.label))      continue;
+        if (filterSameTrack     && !wiEqual (rec.title,      ref.title))      continue;
 
-        // Year range filter
         if (filterUseYearRange && yearRange > 0 && refYear > 0)
         {
             int recYear = parseYear (rec.year);
@@ -154,45 +149,232 @@ void TigerTandaPlugin::runTandaSearch()
         results.push_back (rec);
     }
 
-    // Sort by year ascending (natural tanda order)
     std::sort (results.begin(), results.end(), [] (const TgRecord& a, const TgRecord& b) {
         return parseYear (a.year) < parseYear (b.year);
     });
 
-    // Limit to 20
     if ((int) results.size() > 20)
         results.resize (20);
 
-    // Populate results listbox
-    if (hResultsList)
-    {
-        SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
-        for (int i = 0; i < (int) results.size(); ++i)
-            SendMessageW (hResultsList, LB_ADDSTRING, 0, (LPARAM) L"");
-    }
+    uiResetResultsList();
+    for (int i = 0; i < (int) results.size(); ++i)
+        uiAddResultRow();
 
-    // Force redraw
-    if (hDlg)
-        InvalidateRect (hDlg, nullptr, FALSE);
+    browseItems.clear();
+    selectedBrowseIdx = -1;
+    uiResetBrowseList();
+    syncBrowseListVisibility();
+
+    uiInvalidateDialog();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Smart search: read VDJ browser results, score & rank, keep top 5
+//  syncBrowseListVisibility
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TigerTandaPlugin::syncBrowseListVisibility()
+{
+#if defined(_WIN32)
+    if (!hBrowseList) return;
+    bool mainView = (activeTab == 0);
+    bool shouldShow = mainView && !browseItems.empty();
+    ShowWindow (hBrowseList, shouldShow ? SW_SHOW : SW_HIDE);
+    if (hDlg && mainView)
+        InvalidateRect (hDlg, nullptr, FALSE);
+#elif defined(__APPLE__)
+    // Mac UI handles visibility in its own draw cycle
+    uiInvalidateDialog();
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  triggerBrowserSearch
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TigerTandaPlugin::triggerBrowserSearch (const TgRecord& rec)
+{
+    bool sameTarget = (rec.title == lastSmartSearchTitle
+                    && rec.bandleader == lastSmartSearchArtist);
+    if (sameTarget)
+        return;
+
+    lastSmartSearchTitle  = rec.title;
+    lastSmartSearchArtist = rec.bandleader;
+
+    if (savedBrowseFolder.empty())
+    {
+        std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
+        if (!curFolder.empty())
+            savedBrowseFolder = curFolder;
+    }
+
+    std::wstring query = normalizeForSearch (rec.title);
+    if (!rec.bandleader.empty())
+        query += L" " + normalizeForSearch (rec.bandleader);
+
+    lastBrowserSearchQuery = query;
+    searchTargetTitle  = rec.title;
+    searchTargetArtist = rec.bandleader;
+    searchTargetYear   = rec.year;
+    smartSearchPending = true;
+    smartSearchActiveToken = ++smartSearchToken;
+    smartSearchRetryCount = 0;
+    smartSearchNoResults = false;
+
+    vdjSend ("browser_window 'songs'");
+    vdjSend ("search \"" + toUtf8 (query) + "\"");
+
+    uiInvalidateDialog();
+    uiSetTimer (TT_TIMER_SMART_SEARCH, 500);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  addSelectedBrowseToAutomix
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TigerTandaPlugin::addSelectedBrowseToAutomix (const char* vdjCommand)
+{
+    if (!vdjCommand || !*vdjCommand)
+        vdjCommand = "playlist_add";
+    if (selectedBrowseIdx < 0 || selectedBrowseIdx >= (int) browseItems.size())
+        return;
+    if (lastBrowserSearchQuery.empty())
+        return;
+
+    const BrowseItem& bi = browseItems[selectedBrowseIdx];
+    if (bi.filePath.empty())
+        return;
+
+    smartSearchPending = true;
+
+    std::wstring userFolder;
+    {
+        std::wstring curFolder = vdjGetString ("get_browsed_folder_path");
+        if (!curFolder.empty())
+            userFolder = curFolder;
+        else if (!savedBrowseFolder.empty())
+            userFolder = savedBrowseFolder;
+    }
+
+    auto currentPath = [this] () {
+        return vdjGetString ("get_browsed_filepath");
+    };
+
+    auto restoreAndUnlock = [&] () {
+        if (!userFolder.empty())
+        {
+            vdjSend ("browser_gotofolder \"" + toUtf8 (userFolder) + "\"");
+            ttSleep (40);
+        }
+        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+        smartSearchPending = false;
+    };
+
+    int automixBefore = (int) vdjGetValue ("file_count automix");
+
+    // Attempt A (fast path): playlist_add "<full path>"
+    {
+        std::string pathCmd = std::string (vdjCommand)
+                            + " \"" + toUtf8 (bi.filePath) + "\"";
+        vdjSend (pathCmd);
+        ttSleep (200);
+
+        int afterA = (int) vdjGetValue ("file_count automix");
+        if (afterA > automixBefore)
+        {
+            restoreAndUnlock();
+            return;
+        }
+    }
+
+    // Attempt 0b (slow fallback): browser_gotofolder parent + scroll-scan
+    size_t lastSlash = bi.filePath.find_last_of (L"\\/");
+    if (lastSlash == std::wstring::npos)
+    {
+        restoreAndUnlock();
+        return;
+    }
+
+    std::wstring parentFolder = bi.filePath.substr (0, lastSlash);
+    vdjSend ("browser_gotofolder \"" + toUtf8 (parentFolder) + "\"");
+    ttSleep (400);
+    vdjSend ("browser_window 'songs'");
+    ttSleep (60);
+
+    int folderCount = (int) vdjGetValue ("file_count");
+    if (folderCount <= 0)
+    {
+        restoreAndUnlock();
+        return;
+    }
+
+    vdjSend ("browser_scroll 'top'");
+    ttSleep (80);
+
+    int scanLimit = folderCount > 1000 ? 1000 : folderCount;
+    bool found = false;
+    for (int k = 0; k < scanLimit; ++k)
+    {
+        if (pathEq (currentPath(), bi.filePath))
+        {
+            found = true;
+            break;
+        }
+        vdjSend ("browser_scroll +1");
+        ttSleep (20);
+    }
+
+    if (found)
+    {
+        ttSleep (50);
+        if (pathEq (currentPath(), bi.filePath))
+        {
+            vdjSend (vdjCommand);
+            ttSleep (300);
+        }
+    }
+
+    restoreAndUnlock();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Smart search: read VDJ browser results, score & rank, keep top 4
 // ─────────────────────────────────────────────────────────────────────────────
 
 void TigerTandaPlugin::runSmartSearch()
 {
-    // Use file_count (the correct VDJ API — browser_count does not exist)
+    int myToken = smartSearchActiveToken;
+
     int totalItems = (int) vdjGetValue ("file_count");
     if (totalItems <= 0)
     {
-        // VDJ hasn't populated results yet — retry in 300ms (keep pending=true)
-        if (hDlg)
-            SetTimer (hDlg, TIMER_SMART_SEARCH, 300, nullptr);
+        const int kMaxRetries = 10;
+        if (smartSearchRetryCount < kMaxRetries)
+        {
+            ++smartSearchRetryCount;
+            uiSetTimer (TT_TIMER_SMART_SEARCH, 300);
+            return;
+        }
+
+        browseItems.clear();
+        selectedBrowseIdx = -1;
+        smartSearchNoResults = true;
+        uiResetBrowseList();
+        syncBrowseListVisibility();
+
+        if (!savedBrowseFolder.empty())
+        {
+            vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
+            ttSleep (20);
+            savedBrowseFolder.clear();
+        }
+        lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+        lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
+        smartSearchPending = false;
+        uiInvalidateDialog();
         return;
     }
-
-    smartSearchPending = false;
 
     const int limit = totalItems < 50 ? totalItems : 50;
     int targetYear = parseYear (searchTargetYear);
@@ -204,34 +386,47 @@ void TigerTandaPlugin::runSmartSearch()
     };
     std::vector<ScoredItem> scored;
 
-    // Scroll to top then read each item one by one — the correct VDJ pattern
-    // (get_browser_file does not exist; use browser_scroll + get_browsed_song)
     vdjSend ("browser_scroll 'top'");
-    Sleep (20);
+    ttSleep (80);
 
     for (int i = 0; i < limit; ++i)
     {
+        if ((i % 5) == 0 && myToken != smartSearchActiveToken)
+            return;
+
         BrowseItem bi;
-        bi.title        = vdjGetString ("get_browsed_song 'title'");
-        bi.artist       = vdjGetString ("get_browsed_song 'artist'");
-        bi.year         = vdjGetString ("get_browsed_song 'year'");
-        bi.filePath     = vdjGetString ("get_browsed_filepath");
+
+        std::wstring fpBegin, fpEnd;
+        int attempts = 0;
+        const int maxAttempts = 3;
+        for (;;)
+        {
+            fpBegin  = vdjGetString ("get_browsed_filepath");
+            bi.title  = vdjGetString ("get_browsed_song 'title'");
+            bi.artist = vdjGetString ("get_browsed_song 'artist'");
+            bi.year   = vdjGetString ("get_browsed_song 'year'");
+            bi.album  = vdjGetString ("get_browsed_song 'album'");
+            bi.comment = vdjGetString ("get_browsed_song 'comment'");
+            fpEnd    = vdjGetString ("get_browsed_filepath");
+
+            if (fpBegin == fpEnd)
+                break;
+
+            if (++attempts >= maxAttempts) break;
+            ttSleep (80);
+        }
+
+        bi.filePath     = fpEnd;
         bi.browserIndex = i;
 
         if (bi.title.empty() && bi.artist.empty())
             break;
 
-        // Score components (each 0-100)
-        // Artist matching: handle partial names and separators
-        // e.g., "Troilo", "Troilo - Fiorentino", "Troilo / Fiorentino"
-        // should all match "Anibal Troilo" equally
         float artistScore = 0.0f;
         if (!searchTargetArtist.empty() && !bi.artist.empty())
         {
-            // Split VDJ artist on common separators (- / & feat. ft.)
             auto vdjParts = TangoMatcher::splitArtistParts (bi.artist);
 
-            // Check each part of the VDJ artist against our bandleader
             float bestPartScore = 0.0f;
             for (auto& part : vdjParts)
             {
@@ -239,7 +434,6 @@ void TigerTandaPlugin::runSmartSearch()
                 if (s > bestPartScore) bestPartScore = s;
             }
 
-            // Also try the full string in case it's just the full name
             float fullScore = TangoMatcher::artistMatchScore (bi.artist, searchTargetArtist);
             artistScore = (bestPartScore > fullScore) ? bestPartScore : fullScore;
         }
@@ -259,20 +453,32 @@ void TigerTandaPlugin::runSmartSearch()
             }
         }
 
-        double starsVal  = vdjGetValue ("get_browsed_song 'stars'");
-        double playVal   = vdjGetValue ("get_browsed_song 'playcount'");
-        int    stars     = (int) starsVal;
-        int    playCount = (int) playVal;
+        auto parseIntLoose = [] (const std::wstring& s) -> int {
+            int n = 0; bool any = false;
+            for (wchar_t c : s)
+            {
+                if (c >= L'0' && c <= L'9') { n = n * 10 + (c - L'0'); any = true; }
+                else if (any) break;
+            }
+            return any ? n : 0;
+        };
+
+        int rating   = parseIntLoose (vdjGetString ("get_browsed_song 'rating'"));
+        int playCount = parseIntLoose (vdjGetString ("get_browsed_song 'playcount'"));
+
+        int stars = (rating > 5) ? (rating + 10) / 20 : rating;
         if (stars < 0) stars = 0;
         if (stars > 5) stars = 5;
         if (playCount < 0) playCount = 0;
+
+        bi.stars     = stars;
+        bi.playCount = playCount;
 
         float starsNorm    = (float) stars * 20.0f;
         float playRaw      = (float) playCount * 5.0f;
         float playNorm     = (playRaw < 100.0f) ? playRaw : 100.0f;
         float qualityScore = (starsNorm + playNorm) / 2.0f;
 
-        // Composite: artist 40%, title 40%, year 10%, quality 10%
         float composite = artistScore * 0.4f + titleScore * 0.4f
                         + yearScore * 0.1f + qualityScore * 0.1f;
 
@@ -282,45 +488,53 @@ void TigerTandaPlugin::runSmartSearch()
         if (i + 1 < limit)
         {
             vdjSend ("browser_scroll +1");
-            Sleep (10);
+            ttSleep (50);
         }
     }
 
-    // Sort by composite score descending
     std::sort (scored.begin(), scored.end(), [] (const ScoredItem& a, const ScoredItem& b) {
         return a.compositeScore > b.compositeScore;
     });
 
-    // Keep top 5
-    browseItems.clear();
-    int keep = (int) scored.size() < 5 ? (int) scored.size() : 5;
-    for (int i = 0; i < keep; ++i)
-        browseItems.push_back (scored[i].item);
+    bool stale = (myToken != smartSearchActiveToken);
 
-    // Update cached count so normal polling doesn't immediately overwrite
+    browseItems.clear();
+    selectedBrowseIdx = -1;
+    if (!stale)
+    {
+        int keep = (int) scored.size() < 4 ? (int) scored.size() : 4;
+        for (int i = 0; i < keep; ++i)
+            browseItems.push_back (scored[i].item);
+
+        for (const auto& bi : browseItems)
+            if (!bi.filePath.empty())
+                CoverArt::getForPath (bi.filePath);
+    }
+
     browseListCount = totalItems;
 
-    // Populate browse listbox
-    if (hBrowseList)
+    uiResetBrowseList();
+    for (int i = 0; i < (int) browseItems.size(); ++i)
+        uiAddBrowseRow();
+    syncBrowseListVisibility();
+
+    if (!savedBrowseFolder.empty())
     {
-        SendMessageW (hBrowseList, LB_RESETCONTENT, 0, 0);
-        for (int i = 0; i < (int) browseItems.size(); ++i)
-            SendMessageW (hBrowseList, LB_ADDSTRING, 0, (LPARAM) L"");
+        vdjSend ("browser_gotofolder \"" + toUtf8 (savedBrowseFolder) + "\"");
+        ttSleep (20);
+        savedBrowseFolder.clear();
+    }
+    else
+    {
+        vdjSend ("goto_last_folder");
+        ttSleep (20);
     }
 
-    // Auto-scroll VDJ browser to #1 ranked result
-    if (!browseItems.empty())
-    {
-        vdjSend ("browser_scroll 'top'");
-        Sleep (20);
-        int topIdx = browseItems[0].browserIndex;
-        if (topIdx > 0)
-            vdjSend ("browser_scroll +" + std::to_string (topIdx));
-    }
+    lastSeenTitle  = vdjGetString ("get_browsed_song 'title'");
+    lastSeenArtist = vdjGetString ("get_browsed_song 'artist'");
 
-    // Force redraw
-    if (hDlg)
-        InvalidateRect (hDlg, nullptr, FALSE);
+    smartSearchPending = false;
+    uiInvalidateDialog();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -333,13 +547,23 @@ void TigerTandaPlugin::resetAll()
     confirmedIdx = -1;
     results.clear();
     selectedResultIdx = -1;
+    selectedBrowseIdx = -1;
     lastSeenTitle.clear();
     lastSeenArtist.clear();
+    lastSmartSearchTitle.clear();
+    lastSmartSearchArtist.clear();
+    savedBrowseFolder.clear();
+    lastBrowserSearchQuery.clear();
 
-    if (hCandList)    SendMessageW (hCandList,    LB_RESETCONTENT, 0, 0);
-    if (hResultsList) SendMessageW (hResultsList, LB_RESETCONTENT, 0, 0);
-    if (hEditTitle)   SetWindowTextW (hEditTitle,  L"");
-    if (hEditArtist)  SetWindowTextW (hEditArtist, L"");
+    uiResetCandidatesList();
+    uiResetResultsList();
+    uiResetBrowseList();
+    uiSetEditText (IDC_EDIT_TITLE,  L"");
+    uiSetEditText (IDC_EDIT_ARTIST, L"");
+    uiSetEditText (IDC_EDIT_YEAR,   L"");
 
-    if (hDlg) InvalidateRect (hDlg, nullptr, FALSE);
+    browseItems.clear();
+    syncBrowseListVisibility();
+
+    uiInvalidateDialog();
 }
