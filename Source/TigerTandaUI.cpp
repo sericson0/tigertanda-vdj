@@ -1462,6 +1462,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             addTip (p->hBtnYearMinus,    L"Decrease year range");
             addTip (p->hBtnYearRange,    L"Year range (\u00B1years from confirmed candidate)");
             addTip (p->hBtnYearPlus,     L"Increase year range");
+            addTip (p->hBtnLock,         L"Lock: freeze search fields while browsing");
         }
 
         // Themed hover popup for browse results (album + stars after 1s
