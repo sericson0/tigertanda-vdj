@@ -920,8 +920,9 @@ static std::wstring buildStarString (int stars)
         editYear.frame   = NSMakeRect (lx + searchW - YEAR_COL_W, ly, YEAR_COL_W, EDIT_H);
         editYear.alignment = NSTextAlignmentCenter;
 
-        // Lock button: right edge of lw
-        lockBtnRect = cgR (lx + lw - LOCK_BTN_W, ly, LOCK_BTN_W, EDIT_H);
+        // Lock button: right edge of lw, vertically centered and shorter than edits
+        int lockInset = 3;
+        lockBtnRect = cgR (lx + lw - LOCK_BTN_W, ly + lockInset, LOCK_BTN_W, EDIT_H - lockInset * 2);
 
         // Dim edit fields when locked
         NSColor* editTextCol = plugin->searchLocked ? ttNSColor (TCol::textDim) : ttNSColor (TCol::textNormal);

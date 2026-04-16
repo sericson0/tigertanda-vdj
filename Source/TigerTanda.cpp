@@ -40,6 +40,10 @@ TigerTandaPlugin::TigerTandaPlugin()
     fontSmall     = createFont (FONT_SIZE_SMALL);
     fontSmallBold = createFont (FONT_SIZE_SMALL,  FW_BOLD);
     fontDetail    = createFont (FONT_SIZE_DETAIL);
+    fontLockIcon  = CreateFontW (-FONT_SIZE_SMALL, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                 CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+                                 L"Segoe MDL2 Assets");
 
     if (!fontNormal)    fontNormal    = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
     if (!fontBold)      fontBold      = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
@@ -47,6 +51,7 @@ TigerTandaPlugin::TigerTandaPlugin()
     if (!fontSmall)     fontSmall     = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
     if (!fontSmallBold) fontSmallBold = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
     if (!fontDetail)    fontDetail    = (HFONT) GetStockObject (DEFAULT_GUI_FONT);
+    if (!fontLockIcon)  fontLockIcon  = fontSmallBold;  // fallback
 
     panelBrush     = CreateSolidBrush (TCol::panel);
     cardBrush      = CreateSolidBrush (TCol::card);
@@ -72,6 +77,7 @@ TigerTandaPlugin::~TigerTandaPlugin()
     if (fontSmall)     DeleteObject (fontSmall);
     if (fontSmallBold) DeleteObject (fontSmallBold);
     if (fontDetail)    DeleteObject (fontDetail);
+    if (fontLockIcon && fontLockIcon != fontSmallBold) DeleteObject (fontLockIcon);
     if (panelBrush)     DeleteObject (panelBrush);
     if (cardBrush)      DeleteObject (cardBrush);
     if (searchBoxBrush) DeleteObject (searchBoxBrush);

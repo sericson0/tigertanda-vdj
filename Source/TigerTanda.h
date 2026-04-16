@@ -349,6 +349,7 @@ public:
     HFONT fontSmallBold = nullptr;
     HFONT fontDetail    = nullptr;
     HFONT fontTitle     = nullptr;
+    HFONT fontLockIcon  = nullptr;
     HBRUSH panelBrush     = nullptr;
     HBRUSH cardBrush      = nullptr;
     HBRUSH searchBoxBrush = nullptr;

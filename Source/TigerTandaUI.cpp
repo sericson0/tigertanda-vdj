@@ -1347,7 +1347,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         SendMessageW (p->hEditYear, EM_SETCUEBANNER, TRUE, (LPARAM) L"Year");
 
         // Lock button (right of year edit — freezes search fields)
-        p->hBtnLock = mkBtn (IDC_BTN_LOCK, L"\xD83D\xDD12");
+        p->hBtnLock = mkBtn (IDC_BTN_LOCK, L"\xE72E");
 
         // Filter buttons (ALL CAPS)
         p->hChkArtist    = mkBtn (IDC_CHK_SAME_ARTIST,    L"ARTIST");
@@ -2540,7 +2540,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                           || di->CtlID == IDC_BTN_YEAR_RANGE)
                             ? p->fontSmall
                             : (di->CtlID == IDC_BTN_LOCK)
-                            ? p->fontSmallBold : p->fontNormal;
+                            ? p->fontLockIcon : p->fontNormal;
             drawOwnerButton (di, label, bg, fg, btnFont, passHover);
             return TRUE;
         }
