@@ -1056,6 +1056,7 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
     showCtrl (p->hEditTitle,     showMain);
     showCtrl (p->hEditArtist,    showMain);
     showCtrl (p->hEditYear,      showMain);
+    showCtrl (p->hBtnLock,       showMain);
     showCtrl (p->hCandList,      showMain);
     showCtrl (p->hResultsList,   showMain);
     showCtrl (p->hBtnPrelisten,  showMain);
