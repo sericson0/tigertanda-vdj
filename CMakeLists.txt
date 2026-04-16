@@ -87,6 +87,11 @@ elseif(APPLE)
         "-framework CoreText"
         "-framework CoreFoundation"
     )
+
+    # Copy logo into bundle Resources
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/TigerTandaLogoV2.png" PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(TigerTanda PRIVATE "${CMAKE_SOURCE_DIR}/TigerTandaLogoV2.png")
 else()
     message(FATAL_ERROR "TigerTanda requires Windows or macOS.")
 endif()

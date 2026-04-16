@@ -738,7 +738,8 @@ static std::wstring buildStarString (int stars)
     // ── List views ───────────────────────────────────────────────────────
     auto makeList = [&](int type) -> std::pair<NSScrollView*, TTListView*> {
         NSScrollView* sv = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-        sv.hasVerticalScroller = (type == 1); // only results list scrolls
+        sv.hasVerticalScroller = (type == 1);
+        sv.scrollerStyle = NSScrollerStyleOverlay;  // overlay scroller doesn't eat content width
         sv.hasHorizontalScroller = NO;
         sv.drawsBackground = NO;
         sv.borderType = NSNoBorder;
@@ -1205,95 +1206,163 @@ static std::wstring buildStarString (int stars)
 
 - (void)drawSettingsTab:(CGContextRef)ctx
 {
-    NSFont* fontBold = [NSFont boldSystemFontOfSize:FONT_SIZE_NORMAL];
-    NSFont* fontSm   = [NSFont systemFontOfSize:FONT_SIZE_SMALL];
+    NSFont* fontBold  = [NSFont boldSystemFontOfSize:FONT_SIZE_NORMAL];
+    NSFont* fontSm    = [NSFont systemFontOfSize:FONT_SIZE_SMALL];
+    NSFont* fontSmB   = [NSFont boldSystemFontOfSize:FONT_SIZE_SMALL];
 
+    // 50/50 split with 10px gap (matches Windows)
+    int settingsColGap = 10;
     int settingsL = DLG_W * 50 / 100;
     int lx = PAD;
-    int rx = settingsL + 5;
-    int rw = DLG_W - rx - PAD;
+    int lw = settingsL - PAD;
+    int rx = settingsL + settingsColGap / 2;
+    int rw = DLG_W - PAD - rx;
 
-    int ly = TOP_H + TOP_GAP + 8;
+    int btnH = BTN_H - 4;   // 20px buttons (matches Windows)
+    int subHdrH = 14;
+    int subHdrPad = 3;
+    int rowGap = 1;
+    int subGroupGap = 6;
 
-    // Left column: FILTERS header
-    cgDrawText (ctx, @"FILTERS", cgR (lx + 6, ly, 200, 18), fontBold, TCol::textBright);
-    ly += 24;
+    // 2-column grid on left
+    int colGap2 = 4;
+    int colW = (lw - colGap2) / 2;
+    int lCol = lx;
+    int rCol = lx + colW + colGap2;
 
-    // Filter buttons (rounded rects)
-    struct FilterInfo { const char* label; bool* value; };
-    FilterInfo filters[] = {
-        {"ARTIST",    &plugin->filterSameArtist},
-        {"SINGER",    &plugin->filterSameSinger},
-        {"GENRE",     &plugin->filterSameGenre},
-        {"LABEL",     &plugin->filterSameLabel},
-        {"GROUPING",  &plugin->filterSameGrouping},
-        {"ORCHESTRA", &plugin->filterSameOrchestra},
-        {"TRACK",     &plugin->filterSameTrack},
-    };
+    int sy = TOP_H + PAD;
 
-    int btnW = 80, btnH = 22, btnGap = 4;
-    int bx = lx + 6;
-    int filterIdx = 0;
-    for (auto& f : filters)
-    {
-        TTColor bg = *f.value ? TCol::filterActive : TCol::buttonBg;
-        TTColor fg = *f.value ? TCol::textBright : TCol::textDim;
+    // ── FILTERS main header ──
+    cgDrawText (ctx, @"FILTERS", cgR (lx + 6, sy, lw, 18), fontBold, TCol::textBright);
+    sy += 18 + 6;
 
-        NSRect btnRect = NSMakeRect (bx, ly, btnW, btnH);
-        NSBezierPath* rr = [NSBezierPath bezierPathWithRoundedRect:btnRect xRadius:4 yRadius:4];
+    // ── DEFAULTS sub-header ──
+    cgDrawText (ctx, @"DEFAULTS", cgR (lx + 6, sy, lw, subHdrH), fontSmB, TCol::textDim);
+    sy += subHdrH + subHdrPad;
+
+    // Row 1: [ARTIST][SINGER]
+    auto drawFilterBtn = [&](int x, int y, int w, int h, const char* label, bool active, int idx) {
+        TTColor bg = active ? TCol::filterActive : TCol::buttonBg;
+        TTColor fg = active ? TCol::textBright : TCol::textDim;
+        NSBezierPath* rr = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x, y, w, h) xRadius:4 yRadius:4];
         [ttNSColor (bg) setFill];
         [rr fill];
+        cgDrawText (ctx, [NSString stringWithUTF8String:label], cgR (x, y, w, h), fontSm, fg, NSTextAlignmentCenter);
+        filterRects[idx] = cgR (x, y, w, h);
+    };
 
-        cgDrawText (ctx, [NSString stringWithUTF8String:f.label],
-                    cgR (bx, ly, btnW, btnH), fontSm, fg, NSTextAlignmentCenter);
+    drawFilterBtn (lCol, sy, colW, btnH, "ARTIST", plugin->filterSameArtist, 0);
+    drawFilterBtn (rCol, sy, colW, btnH, "SINGER", plugin->filterSameSinger, 1);
+    sy += btnH + rowGap;
 
-        filterRects[filterIdx++] = cgR (bx, ly, btnW, btnH);
+    // Row 2: [YEAR toggle + spinner][GENRE]
+    {
+        int spinBtnW = 20;
+        int spinLabelW = 40;
+        int spinGroupW = spinBtnW * 2 + spinLabelW + 2;
+        int yearSpinGap = 4;
+        int yearChkW = colW - spinGroupW - yearSpinGap;
+        if (yearChkW < 48) yearChkW = 48;
 
-        bx += btnW + btnGap;
-        if (bx + btnW > settingsL - PAD)
+        // Year toggle
+        TTColor yearBg = plugin->filterUseYearRange ? TCol::filterActive : TCol::buttonBg;
+        TTColor yearFg = plugin->filterUseYearRange ? TCol::textBright : TCol::textDim;
+        NSString* yearLabel = plugin->filterUseYearRange
+            ? [NSString stringWithFormat:@"YEAR \u00B1%d", plugin->yearRange]
+            : @"YEAR OFF";
+
+        NSBezierPath* yearPill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(lCol, sy, yearChkW, btnH) xRadius:4 yRadius:4];
+        [ttNSColor (yearBg) setFill];
+        [yearPill fill];
+        cgDrawText (ctx, yearLabel, cgR (lCol, sy, yearChkW, btnH), fontSm, yearFg, NSTextAlignmentCenter);
+        yearToggleRect = cgR (lCol, sy, yearChkW, btnH);
+
+        // Spinner: [-] [±N] [+]
+        int spinX = lCol + yearChkW + yearSpinGap;
+        int spinY = sy + 1;
+        int spinH = btnH - 2;
+
+        NSBezierPath* minusPill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(spinX, spinY, spinBtnW, spinH) xRadius:3 yRadius:3];
+        [ttNSColor (TCol::buttonBg) setFill];
+        [minusPill fill];
+        cgDrawText (ctx, @"\u2212", cgR (spinX, spinY, spinBtnW, spinH), fontSm, TCol::textBright, NSTextAlignmentCenter);
+        yearMinusRect = cgR (spinX, spinY, spinBtnW, spinH);
+
+        NSString* rangeLabel = [NSString stringWithFormat:@"\u00B1%d", plugin->yearRange];
+        int labelX = spinX + spinBtnW + 1;
+        NSBezierPath* labelPill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(labelX, spinY, spinLabelW, spinH) xRadius:3 yRadius:3];
+        [ttNSColor (TCol::buttonBg) setFill];
+        [labelPill fill];
+        cgDrawText (ctx, rangeLabel, cgR (labelX, spinY, spinLabelW, spinH), fontSm, TCol::textNormal, NSTextAlignmentCenter);
+
+        int plusX = labelX + spinLabelW + 1;
+        NSBezierPath* plusPill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect(plusX, spinY, spinBtnW, spinH) xRadius:3 yRadius:3];
+        [ttNSColor (TCol::buttonBg) setFill];
+        [plusPill fill];
+        cgDrawText (ctx, @"+", cgR (plusX, spinY, spinBtnW, spinH), fontSm, TCol::textBright, NSTextAlignmentCenter);
+        yearPlusRect = cgR (plusX, spinY, spinBtnW, spinH);
+
+        // GENRE on right column
+        drawFilterBtn (rCol, sy, colW, btnH, "GENRE", plugin->filterSameGenre, 2);
+    }
+    sy += btnH + rowGap + subGroupGap;
+
+    // ── OTHER sub-header ──
+    cgDrawText (ctx, @"OTHER", cgR (lx + 6, sy, lw, subHdrH), fontSmB, TCol::textDim);
+    sy += subHdrH + subHdrPad;
+
+    // Row 1: [LABEL][GROUPING]
+    drawFilterBtn (lCol, sy, colW, btnH, "LABEL", plugin->filterSameLabel, 3);
+    drawFilterBtn (rCol, sy, colW, btnH, "GROUPING", plugin->filterSameGrouping, 4);
+    sy += btnH + rowGap;
+
+    // Row 2: [ORCHESTRA][TRACK]
+    drawFilterBtn (lCol, sy, colW, btnH, "ORCHESTRA", plugin->filterSameOrchestra, 5);
+    drawFilterBtn (rCol, sy, colW, btnH, "TRACK", plugin->filterSameTrack, 6);
+    sy += btnH + rowGap;
+
+    // ── Logo ──
+    {
+        int logoTopPad = 16;
+        int logoBotPad = 4;
+        int logoTop = sy + logoTopPad;
+        int logoBot = DLG_H - PAD - logoBotPad;
+        int logoH = logoBot - logoTop;
+        if (logoH > 0)
         {
-            bx = lx + 6;
-            ly += btnH + btnGap;
+            NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+            NSString* logoPath = [bundle pathForResource:@"TigerTandaLogoV2" ofType:@"png"];
+            if (logoPath)
+            {
+                NSImage* logo = [[NSImage alloc] initWithContentsOfFile:logoPath];
+                if (logo)
+                {
+                    NSSize imgSz = logo.size;
+                    if (imgSz.width > 0 && imgSz.height > 0)
+                    {
+                        int dstH = logoH;
+                        int dstW = (int) (imgSz.width / imgSz.height * dstH);
+                        if (dstW > lw) { dstW = lw; dstH = (int) (imgSz.height / imgSz.width * dstW); }
+                        int dstX = lx + (lw - dstW) / 2;
+                        int dstY = logoTop + (logoH - dstH) / 2;
+                        [logo drawInRect:NSMakeRect (dstX, dstY, dstW, dstH)
+                               fromRect:NSZeroRect
+                              operation:NSCompositingOperationSourceOver
+                               fraction:1.0
+                         respectFlipped:YES
+                                  hints:@{NSImageHintInterpolation: @(NSImageInterpolationHigh)}];
+                    }
+                }
+            }
         }
     }
 
-    ly += btnH + 12;
-
-    // Year toggle + spinner
-    int yearBtnW = 100;
-    NSString* yearLabel = plugin->filterUseYearRange
-        ? [NSString stringWithFormat:@"YEAR: \u00B1%d YRS", plugin->yearRange]
-        : @"YEAR: OFF";
-    TTColor yearBg = plugin->filterUseYearRange ? TCol::filterActive : TCol::buttonBg;
-    TTColor yearFg = plugin->filterUseYearRange ? TCol::textBright : TCol::textDim;
-
-    NSBezierPath* yearPill = [NSBezierPath bezierPathWithRoundedRect:
-        NSMakeRect (lx + 6, ly, yearBtnW, btnH) xRadius:4 yRadius:4];
-    [ttNSColor (yearBg) setFill];
-    [yearPill fill];
-    cgDrawText (ctx, yearLabel, cgR (lx + 6, ly, yearBtnW, btnH), fontSm, yearFg, NSTextAlignmentCenter);
-    yearToggleRect = cgR (lx + 6, ly, yearBtnW, btnH);
-
-    // - button
-    int spinX = lx + 6 + yearBtnW + 6;
-    NSBezierPath* minusPill = [NSBezierPath bezierPathWithRoundedRect:
-        NSMakeRect (spinX, ly, 28, btnH) xRadius:4 yRadius:4];
-    [ttNSColor (TCol::buttonBg) setFill];
-    [minusPill fill];
-    cgDrawText (ctx, @"\u2212", cgR (spinX, ly, 28, btnH), fontSm, TCol::textBright, NSTextAlignmentCenter);
-    yearMinusRect = cgR (spinX, ly, 28, btnH);
-
-    // + button
-    spinX += 32;
-    NSBezierPath* plusPill = [NSBezierPath bezierPathWithRoundedRect:
-        NSMakeRect (spinX, ly, 28, btnH) xRadius:4 yRadius:4];
-    [ttNSColor (TCol::buttonBg) setFill];
-    [plusPill fill];
-    cgDrawText (ctx, @"+", cgR (spinX, ly, 28, btnH), fontSm, TCol::textBright, NSTextAlignmentCenter);
-    yearPlusRect = cgR (spinX, ly, 28, btnH);
-
-    // Right column: HOW IT WORKS
-    int ry = TOP_H + TOP_GAP + 8;
+    // ── Right column: HOW IT WORKS ──
+    int ry = TOP_H + PAD;
     cgDrawText (ctx, @"HOW IT WORKS", cgR (rx, ry, rw, 18), fontBold, TCol::textBright);
     ry += 24;
 
@@ -1376,17 +1445,22 @@ static std::wstring buildStarString (int stars)
             [self setNeedsDisplay:YES];
             return;
         }
-        if (CGRectContainsPoint (yearMinusRect, pt))
+        if (CGRectContainsPoint (yearMinusRect, pt) || CGRectContainsPoint (yearPlusRect, pt))
         {
-            if (plugin->yearRange > 1) plugin->yearRange--;
-            plugin->saveSettings();
-            plugin->runTandaSearch();
-            [self setNeedsDisplay:YES];
-            return;
-        }
-        if (CGRectContainsPoint (yearPlusRect, pt))
-        {
-            if (plugin->yearRange < 20) plugin->yearRange++;
+            // Cycle through skip values: 0, 1, 2, 3, 5, 10 (matches Windows)
+            static const int kYrVals[] = { 0, 1, 2, 3, 5, 10 };
+            int curIdx = 0;
+            for (int i = 0; i < 6; ++i)
+                if (kYrVals[i] == plugin->yearRange) { curIdx = i; break; }
+            if (CGRectContainsPoint (yearMinusRect, pt))
+            {
+                if (curIdx > 0) --curIdx;
+            }
+            else
+            {
+                if (curIdx < 5) ++curIdx;
+            }
+            plugin->yearRange = kYrVals[curIdx];
             plugin->saveSettings();
             plugin->runTandaSearch();
             [self setNeedsDisplay:YES];
