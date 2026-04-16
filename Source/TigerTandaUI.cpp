@@ -996,6 +996,9 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hEditTitle,  lx,                            ly, titleW,     EDIT_H, FALSE);
         MoveWindow (p->hEditArtist, lx + titleW + gap,             ly, artistW,    EDIT_H, FALSE);
         MoveWindow (p->hEditYear,   lx + usableW - YEAR_COL_W,     ly, YEAR_COL_W, EDIT_H, FALSE);
+        // Lock button: small square to the right of year edit, in the scrollbar margin
+        const int lockBtnW = 18;
+        MoveWindow (p->hBtnLock, lx + usableW - YEAR_COL_W + YEAR_COL_W + 2, ly + (EDIT_H - lockBtnW) / 2, lockBtnW, lockBtnW, FALSE);
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
         // Candidates list — exactly 3 rows. LBS_DISABLENOSCROLL keeps the
@@ -1343,6 +1346,9 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                         0, 0, 10, 10, hwnd,
                                         (HMENU) IDC_EDIT_YEAR, nullptr, nullptr);
         SendMessageW (p->hEditYear, EM_SETCUEBANNER, TRUE, (LPARAM) L"Year");
+
+        // Lock button (right of year edit — freezes search fields)
+        p->hBtnLock = mkBtn (IDC_BTN_LOCK, L"\xD83D\xDD12");
 
         // Filter buttons (ALL CAPS)
         p->hChkArtist    = mkBtn (IDC_CHK_SAME_ARTIST,    L"ARTIST");
@@ -1994,7 +2000,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         //   re-identify → search again → ...
         // Gate on curFolder + smartSearchPending to break the cycle.
         std::wstring pollFolder = p->vdjGetString ("get_browsed_folder_path");
-        if (!pollFolder.empty() && !p->smartSearchPending)
+        if (!pollFolder.empty() && !p->smartSearchPending && !p->searchLocked)
         {
             std::wstring newTitle  = p->vdjGetString ("get_browsed_song 'title'");
             std::wstring newArtist = p->vdjGetString ("get_browsed_song 'artist'");
@@ -2306,6 +2312,18 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             InvalidateRect (hwnd, nullptr, FALSE);
             break;
 
+        // Lock toggle — freeze search fields on browser navigation
+        case IDC_BTN_LOCK:
+        {
+            p->searchLocked = !p->searchLocked;
+            if (p->hBtnLock)    InvalidateRect (p->hBtnLock,    nullptr, FALSE);
+            // Edit text color changes via WM_CTLCOLOREDIT on next repaint
+            if (p->hEditTitle)  InvalidateRect (p->hEditTitle,  nullptr, TRUE);
+            if (p->hEditArtist) InvalidateRect (p->hEditArtist, nullptr, TRUE);
+            if (p->hEditYear)   InvalidateRect (p->hEditYear,   nullptr, TRUE);
+            break;
+        }
+
         // Close
         case IDC_BTN_CLOSE:
             p->dialogRequestedOpen  = false;
@@ -2486,7 +2504,12 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             bool btnHovered = (di->itemState & ODS_HOTLIGHT) != 0 || p->hoveredBtn == di->hwndItem;
             COLORREF bg = TCol::buttonBg, fg = TCol::textNormal;
-            if (di->CtlID == IDC_BTN_CLOSE)
+            if (di->CtlID == IDC_BTN_LOCK)
+            {
+                bg = p->searchLocked ? TCol::accent : TCol::buttonBg;
+                fg = p->searchLocked ? TCol::textBright : TCol::textDim;
+            }
+            else if (di->CtlID == IDC_BTN_CLOSE)
             {
                 bg = btnHovered ? RGB (200, 45, 45) : RGB (70, 28, 28);
                 fg = TCol::textBright;
@@ -2514,7 +2537,8 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
             bool passHover = (di->CtlID != IDC_BTN_CLOSE) && btnHovered;
             HFONT btnFont = (di->CtlID == IDC_BTN_YEAR_TOGGLE
-                          || di->CtlID == IDC_BTN_YEAR_RANGE)
+                          || di->CtlID == IDC_BTN_YEAR_RANGE
+                          || di->CtlID == IDC_BTN_LOCK)
                             ? p->fontSmall : p->fontNormal;
             drawOwnerButton (di, label, bg, fg, btnFont, passHover);
             return TRUE;
@@ -2759,7 +2783,7 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (p && (hed == p->hEditTitle || hed == p->hEditArtist || hed == p->hEditYear))
         {
             SetBkColor   (hdc, RGB (32, 36, 52));
-            SetTextColor (hdc, TCol::textNormal);
+            SetTextColor (hdc, p->searchLocked ? TCol::textDim : TCol::textNormal);
             return (LRESULT) p->searchBoxBrush;
         }
         SetBkColor   (hdc, TCol::card);

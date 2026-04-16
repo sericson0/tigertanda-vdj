@@ -41,6 +41,7 @@ enum CtrlId
     IDC_EDIT_TITLE         = 2101,
     IDC_EDIT_ARTIST        = 2102,
     IDC_EDIT_YEAR          = 2104,
+    IDC_BTN_LOCK           = 2105,
     IDC_CANDIDATES_LIST    = 2201,
 
     // Settings tab (filter buttons)
@@ -303,6 +304,7 @@ public:
     bool suppressNextHideSync = false;
     bool suppressEditChange   = false;
     bool resultsLastInputWasMouse = false;
+    bool searchLocked         = false;  // lock icon: freeze search fields on browser nav
 
     // ── Platform-specific UI state ───────────────────────────────────────────
 
@@ -312,6 +314,7 @@ public:
     HWND hEditTitle        = nullptr;
     HWND hEditArtist       = nullptr;
     HWND hEditYear         = nullptr;
+    HWND hBtnLock          = nullptr;
     HWND hCandList         = nullptr;
     HWND hChkArtist        = nullptr;
     HWND hChkSinger        = nullptr;

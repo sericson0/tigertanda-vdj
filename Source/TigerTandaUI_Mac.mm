@@ -335,6 +335,9 @@ static std::wstring buildStarString (int stars)
     int hoverPendingItem;
     NSTimer* hoverDwellTimer;
 
+    // Lock button rect
+    CGRect lockBtnRect;
+
     // Cached rects for settings tab click handling
     CGRect settingsToggleRect;
     CGRect yearToggleRect;
@@ -914,11 +917,19 @@ static std::wstring buildStarString (int stars)
         editTitle.frame  = NSMakeRect (lx, ly, titleW, EDIT_H);
         editArtist.frame = NSMakeRect (lx + titleW + gap, ly, artistW, EDIT_H);
         // Year field: align right edge with list year columns.
-        // NSTextField adds internal padding, so shrink the frame slightly
-        // and right-align it to match the YEAR column in the list rows.
-        int yearFieldW = YEAR_COL_W - 4;  // slightly narrower to match visual
+        int yearFieldW = YEAR_COL_W - 4;
         editYear.frame   = NSMakeRect (lx + lw - YEAR_COL_W + 2, ly, yearFieldW, EDIT_H);
         editYear.alignment = NSTextAlignmentCenter;
+
+        // Lock button: small square to the right of year edit
+        int lockBtnW = 18;
+        lockBtnRect = cgR (lx + lw + 2, ly + (EDIT_H - lockBtnW) / 2, lockBtnW, lockBtnW);
+
+        // Dim edit fields when locked
+        NSColor* editTextCol = plugin->searchLocked ? ttNSColor (TCol::textDim) : ttNSColor (TCol::textNormal);
+        editTitle.textColor  = editTextCol;
+        editArtist.textColor = editTextCol;
+        editYear.textColor   = editTextCol;
         editTitle.hidden = NO;
         editArtist.hidden = NO;
         editYear.hidden = NO;
@@ -1059,6 +1070,19 @@ static std::wstring buildStarString (int stars)
         cgDrawText (ctx, @"TITLE", cgR (lx + 6, hy, titleColW, 14), fontSm, TCol::textDim);
         cgDrawText (ctx, @"ARTIST", cgR (lx + titleColW + gap + 6, hy, artistColW, 14), fontSm, TCol::textDim);
         cgDrawText (ctx, @"YEAR", cgR (lx + usableW - YEAR_COL_W, hy, YEAR_COL_W, 14), fontSm, TCol::textDim, NSTextAlignmentCenter);
+    }
+
+    // Lock button (right of year edit)
+    {
+        TTColor lockBg = plugin->searchLocked ? TCol::accent : TCol::buttonBg;
+        TTColor lockFg = plugin->searchLocked ? TCol::textBright : TCol::textDim;
+        NSBezierPath* lockPill = [NSBezierPath bezierPathWithRoundedRect:
+            NSMakeRect (lockBtnRect.origin.x, lockBtnRect.origin.y,
+                        lockBtnRect.size.width, lockBtnRect.size.height)
+            xRadius:3 yRadius:3];
+        [ttNSColor (lockBg) setFill];
+        [lockPill fill];
+        cgDrawText (ctx, @"\U0001F512", lockBtnRect, fontSm, lockFg, NSTextAlignmentCenter);
     }
 
     // "MATCHES (N)" header
@@ -1435,6 +1459,14 @@ static std::wstring buildStarString (int stars)
     NSPoint loc = [self convertPoint:[event locationInWindow] fromView:nil];
     CGPoint pt = CGPointMake (loc.x, loc.y);
 
+    // Lock button
+    if (plugin->activeTab == 0 && CGRectContainsPoint (lockBtnRect, pt))
+    {
+        plugin->searchLocked = !plugin->searchLocked;
+        [self layoutUI];
+        return;
+    }
+
     // Settings toggle (top bar)
     if (CGRectContainsPoint (settingsToggleRect, pt))
     {
@@ -1590,6 +1622,7 @@ static std::wstring buildStarString (int stars)
     if (!plugin || plugin->activeTab != 0) return;
     if (plugin->smartSearchPending) return;
     if (plugin->metadataLoading) return;
+    if (plugin->searchLocked) return;
 
     std::wstring folder = plugin->vdjGetString ("get_browsed_folder_path");
     if (folder.empty()) return;
