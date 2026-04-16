@@ -1,0 +1,33 @@
+name: Build Windows
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package
+        run: |
+          Compress-Archive -Path build/Release/TigerTanda.dll, build/Release/metadata.csv -DestinationPath build/TigerTanda-Windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TigerTanda-Windows
+          path: build/TigerTanda-Windows.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/TigerTanda-Windows.zip
