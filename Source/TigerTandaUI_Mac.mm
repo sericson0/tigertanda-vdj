@@ -909,20 +909,19 @@ static std::wstring buildStarString (int stars)
 
     if (showMain)
     {
-        // Search inputs
+        // Search inputs — lock button sits at right edge of lw
         int ly = plugin->columnHeaderY + 14;
         int gap = 4;
-        int titleW = (lw - YEAR_COL_W - gap * 2) * 55 / 100;
-        int artistW = lw - titleW - YEAR_COL_W - gap * 2;
+        int searchW = lw - LOCK_BTN_W - 2;  // usable width for title/artist/year
+        int titleW = (searchW - YEAR_COL_W - gap * 2) * 55 / 100;
+        int artistW = searchW - titleW - YEAR_COL_W - gap * 2;
         editTitle.frame  = NSMakeRect (lx, ly, titleW, EDIT_H);
         editArtist.frame = NSMakeRect (lx + titleW + gap, ly, artistW, EDIT_H);
-        // Year field: align right edge with list year columns.
-        editYear.frame   = NSMakeRect (lx + lw - YEAR_COL_W, ly, YEAR_COL_W, EDIT_H);
+        editYear.frame   = NSMakeRect (lx + searchW - YEAR_COL_W, ly, YEAR_COL_W, EDIT_H);
         editYear.alignment = NSTextAlignmentCenter;
 
-        // Lock button: full edit height, right of year edit
-        int lockBtnW = EDIT_H;
-        lockBtnRect = cgR (lx + lw + 1, ly, lockBtnW, EDIT_H);
+        // Lock button: right edge of lw
+        lockBtnRect = cgR (lx + lw - LOCK_BTN_W, ly, LOCK_BTN_W, EDIT_H);
 
         // Dim edit fields when locked
         NSColor* editTextCol = plugin->searchLocked ? ttNSColor (TCol::textDim) : ttNSColor (TCol::textNormal);
@@ -934,20 +933,20 @@ static std::wstring buildStarString (int stars)
         editYear.hidden = NO;
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
-        // Candidates list
+        // Candidates list (same width as search row so columns align)
         int candH = CAND_ITEM_H * 3 + 2;
-        candScroll.frame = NSMakeRect (lx, ly, lw, candH);
+        candScroll.frame = NSMakeRect (lx, ly, searchW, candH);
         candScroll.hidden = NO;
-        candList.frame = NSMakeRect (0, 0, lw, candH);
+        candList.frame = NSMakeRect (0, 0, searchW, candH);
         ly += candH + 6;
 
         // Matches header
         plugin->matchHeaderY = ly;
         int matchListTop = ly + 14;
         int matchListBot = DLG_H - 4;
-        resultsScroll.frame = NSMakeRect (lx, matchListTop, lw, matchListBot - matchListTop);
+        resultsScroll.frame = NSMakeRect (lx, matchListTop, searchW, matchListBot - matchListTop);
         resultsScroll.hidden = NO;
-        resultsList.frame = NSMakeRect (0, 0, lw, matchListBot - matchListTop);
+        resultsList.frame = NSMakeRect (0, 0, searchW, matchListBot - matchListTop);
 
         // Right column
         int ry = TOP_H + bannerShift;
@@ -1063,7 +1062,8 @@ static std::wstring buildStarString (int stars)
     // Column headers
     {
         int hy = plugin->columnHeaderY;
-        int gap = 4, usableW = lw;
+        int gap = 4;
+        int usableW = lw - LOCK_BTN_W - 2;  // match search row width
         int titleColW = (usableW - YEAR_COL_W - gap * 2) * 55 / 100;
         int artistColW = usableW - titleColW - YEAR_COL_W - gap * 2;
         cgDrawText (ctx, @"TITLE", cgR (lx + 6, hy, titleColW, 14), fontSm, TCol::textDim);

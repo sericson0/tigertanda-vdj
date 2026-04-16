@@ -996,9 +996,8 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hEditTitle,  lx,                            ly, titleW,     EDIT_H, FALSE);
         MoveWindow (p->hEditArtist, lx + titleW + gap,             ly, artistW,    EDIT_H, FALSE);
         MoveWindow (p->hEditYear,   lx + usableW - YEAR_COL_W,     ly, YEAR_COL_W, EDIT_H, FALSE);
-        // Lock button: full edit height, right of year edit
-        const int lockBtnW = EDIT_H;
-        MoveWindow (p->hBtnLock, lx + usableW + 1, ly, lockBtnW, EDIT_H, FALSE);
+        // Lock button: fits in scrollbar margin (sbW ≈ 17px)
+        MoveWindow (p->hBtnLock, lx + usableW + 1, ly, LOCK_BTN_W, EDIT_H, FALSE);
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
         // Candidates list — exactly 3 rows. LBS_DISABLENOSCROLL keeps the
