@@ -248,8 +248,20 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetUserInterface (TVdjPluginInterface8* plug
     if (GetInfo ("get hwnd", &hwndVal) == S_OK && hwndVal != 0)
         vdjWindow = (void*) (intptr_t) hwndVal;
 
-    if (!macUI)
-        createMacUI (this, vdjWindow);
+    if (macUI)
+    {
+        // Window exists but may be hidden — re-show it
+        @autoreleasepool {
+            NSPanel* panel = (__bridge NSPanel*) macUI;
+            dialogRequestedOpen = true;
+            [panel makeKeyAndOrderFront:nil];
+        }
+        pluginInterface->Type = VDJINTERFACE_DIALOG;
+        pluginInterface->hWnd = (VDJ_WINDOW) macUI;
+        return S_OK;
+    }
+
+    createMacUI (this, vdjWindow);
 
     if (macUI)
     {

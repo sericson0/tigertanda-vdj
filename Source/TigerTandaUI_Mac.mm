@@ -1507,6 +1507,19 @@ static std::wstring buildStarString (int stars)
 //  Window delegate — notify VDJ when window closes (#8)
 // ─────────────────────────────────────────────────────────────────────────────
 
+- (BOOL)windowShouldClose:(NSWindow*)sender
+{
+    // Hide instead of close — VDJ will re-show via OnGetUserInterface
+    [sender orderOut:nil];
+    if (plugin)
+    {
+        plugin->dialogRequestedOpen = false;
+        // Tell VDJ to deactivate the effect GUI button
+        plugin->vdjSend ("effect_active 0");
+    }
+    return NO;  // prevent actual close/destroy
+}
+
 - (void)windowWillClose:(NSNotification*)notification
 {
     if (plugin)
