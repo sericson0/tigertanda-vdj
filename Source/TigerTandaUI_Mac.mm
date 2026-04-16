@@ -1509,15 +1509,13 @@ static std::wstring buildStarString (int stars)
 
 - (BOOL)windowShouldClose:(NSWindow*)sender
 {
-    // Hide instead of close — VDJ will re-show via OnGetUserInterface
-    [sender orderOut:nil];
     if (plugin)
     {
         plugin->dialogRequestedOpen = false;
-        // Tell VDJ to deactivate the effect GUI button
         plugin->vdjSend ("effect_active 0");
+        destroyMacUI (plugin);
     }
-    return NO;  // prevent actual close/destroy
+    return NO;  // destroyMacUI already closed it
 }
 
 - (void)windowWillClose:(NSNotification*)notification
