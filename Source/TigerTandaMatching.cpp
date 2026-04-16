@@ -45,20 +45,6 @@ static int parseYear (const std::wstring& dateStr)
     return 0;
 }
 
-// Windows-aware filepath equality: case-insensitive and slash-agnostic.
-static bool pathEq (const std::wstring& a, const std::wstring& b)
-{
-    if (a.size() != b.size()) return false;
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        wchar_t ca = a[i], cb = b[i];
-        if (ca == L'/') ca = L'\\';
-        if (cb == L'/') cb = L'\\';
-        if (towlower (ca) != towlower (cb)) return false;
-    }
-    return true;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Phase 1: Identification
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,10 +242,6 @@ void TigerTandaPlugin::addSelectedBrowseToAutomix (const char* vdjCommand)
             userFolder = savedBrowseFolder;
     }
 
-    auto currentPath = [this] () {
-        return vdjGetString ("get_browsed_filepath");
-    };
-
     auto restoreAndUnlock = [&] () {
         if (!userFolder.empty())
         {
@@ -271,69 +253,10 @@ void TigerTandaPlugin::addSelectedBrowseToAutomix (const char* vdjCommand)
         smartSearchPending = false;
     };
 
-    int automixBefore = (int) vdjGetValue ("file_count automix");
-
-    // Attempt A (fast path): playlist_add "<full path>"
-    {
-        std::string pathCmd = std::string (vdjCommand)
-                            + " \"" + toUtf8 (bi.filePath) + "\"";
-        vdjSend (pathCmd);
-        ttSleep (200);
-
-        int afterA = (int) vdjGetValue ("file_count automix");
-        if (afterA > automixBefore)
-        {
-            restoreAndUnlock();
-            return;
-        }
-    }
-
-    // Attempt 0b (slow fallback): browser_gotofolder parent + scroll-scan
-    size_t lastSlash = bi.filePath.find_last_of (L"\\/");
-    if (lastSlash == std::wstring::npos)
-    {
-        restoreAndUnlock();
-        return;
-    }
-
-    std::wstring parentFolder = bi.filePath.substr (0, lastSlash);
-    vdjSend ("browser_gotofolder \"" + toUtf8 (parentFolder) + "\"");
-    ttSleep (400);
-    vdjSend ("browser_window 'songs'");
-    ttSleep (60);
-
-    int folderCount = (int) vdjGetValue ("file_count");
-    if (folderCount <= 0)
-    {
-        restoreAndUnlock();
-        return;
-    }
-
-    vdjSend ("browser_scroll 'top'");
-    ttSleep (80);
-
-    int scanLimit = folderCount > 1000 ? 1000 : folderCount;
-    bool found = false;
-    for (int k = 0; k < scanLimit; ++k)
-    {
-        if (pathEq (currentPath(), bi.filePath))
-        {
-            found = true;
-            break;
-        }
-        vdjSend ("browser_scroll +1");
-        ttSleep (20);
-    }
-
-    if (found)
-    {
-        ttSleep (50);
-        if (pathEq (currentPath(), bi.filePath))
-        {
-            vdjSend (vdjCommand);
-            ttSleep (300);
-        }
-    }
+    std::string pathCmd = std::string (vdjCommand)
+                        + " \"" + toUtf8 (bi.filePath) + "\"";
+    vdjSend (pathCmd);
+    ttSleep (200);
 
     restoreAndUnlock();
 }
