@@ -996,9 +996,9 @@ static void applyLayout (TigerTandaPlugin* p, HWND hwnd)
         MoveWindow (p->hEditTitle,  lx,                            ly, titleW,     EDIT_H, FALSE);
         MoveWindow (p->hEditArtist, lx + titleW + gap,             ly, artistW,    EDIT_H, FALSE);
         MoveWindow (p->hEditYear,   lx + usableW - YEAR_COL_W,     ly, YEAR_COL_W, EDIT_H, FALSE);
-        // Lock button: small square to the right of year edit, in the scrollbar margin
-        const int lockBtnW = 18;
-        MoveWindow (p->hBtnLock, lx + usableW - YEAR_COL_W + YEAR_COL_W + 2, ly + (EDIT_H - lockBtnW) / 2, lockBtnW, lockBtnW, FALSE);
+        // Lock button: full edit height, right of year edit
+        const int lockBtnW = EDIT_H;
+        MoveWindow (p->hBtnLock, lx + usableW + 1, ly, lockBtnW, EDIT_H, FALSE);
         ly += EDIT_H + TRACK_SEARCH_GAP;
 
         // Candidates list — exactly 3 rows. LBS_DISABLENOSCROLL keeps the
@@ -2537,9 +2537,10 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             // Pass hover state (close button handles its own color above; others use drawOwnerButton's lighten)
             bool passHover = (di->CtlID != IDC_BTN_CLOSE) && btnHovered;
             HFONT btnFont = (di->CtlID == IDC_BTN_YEAR_TOGGLE
-                          || di->CtlID == IDC_BTN_YEAR_RANGE
-                          || di->CtlID == IDC_BTN_LOCK)
-                            ? p->fontSmall : p->fontNormal;
+                          || di->CtlID == IDC_BTN_YEAR_RANGE)
+                            ? p->fontSmall
+                            : (di->CtlID == IDC_BTN_LOCK)
+                            ? p->fontSmallBold : p->fontNormal;
             drawOwnerButton (di, label, bg, fg, btnFont, passHover);
             return TRUE;
         }

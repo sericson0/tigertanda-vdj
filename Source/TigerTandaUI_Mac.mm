@@ -917,13 +917,12 @@ static std::wstring buildStarString (int stars)
         editTitle.frame  = NSMakeRect (lx, ly, titleW, EDIT_H);
         editArtist.frame = NSMakeRect (lx + titleW + gap, ly, artistW, EDIT_H);
         // Year field: align right edge with list year columns.
-        int yearFieldW = YEAR_COL_W - 4;
-        editYear.frame   = NSMakeRect (lx + lw - YEAR_COL_W + 2, ly, yearFieldW, EDIT_H);
+        editYear.frame   = NSMakeRect (lx + lw - YEAR_COL_W, ly, YEAR_COL_W, EDIT_H);
         editYear.alignment = NSTextAlignmentCenter;
 
-        // Lock button: small square to the right of year edit
-        int lockBtnW = 18;
-        lockBtnRect = cgR (lx + lw + 2, ly + (EDIT_H - lockBtnW) / 2, lockBtnW, lockBtnW);
+        // Lock button: full edit height, right of year edit
+        int lockBtnW = EDIT_H;
+        lockBtnRect = cgR (lx + lw + 1, ly, lockBtnW, EDIT_H);
 
         // Dim edit fields when locked
         NSColor* editTextCol = plugin->searchLocked ? ttNSColor (TCol::textDim) : ttNSColor (TCol::textNormal);
@@ -1082,7 +1081,8 @@ static std::wstring buildStarString (int stars)
             xRadius:3 yRadius:3];
         [ttNSColor (lockBg) setFill];
         [lockPill fill];
-        cgDrawText (ctx, @"\U0001F512", lockBtnRect, fontSm, lockFg, NSTextAlignmentCenter);
+        NSFont* fontSmBold = [NSFont boldSystemFontOfSize:FONT_SIZE_SMALL];
+        cgDrawText (ctx, @"\U0001F512", lockBtnRect, fontSmBold, lockFg, NSTextAlignmentCenter);
     }
 
     // "MATCHES (N)" header
