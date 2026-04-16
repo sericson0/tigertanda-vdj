@@ -913,7 +913,12 @@ static std::wstring buildStarString (int stars)
         int artistW = lw - titleW - YEAR_COL_W - gap * 2;
         editTitle.frame  = NSMakeRect (lx, ly, titleW, EDIT_H);
         editArtist.frame = NSMakeRect (lx + titleW + gap, ly, artistW, EDIT_H);
-        editYear.frame   = NSMakeRect (lx + lw - YEAR_COL_W, ly, YEAR_COL_W, EDIT_H);
+        // Year field: align right edge with list year columns.
+        // NSTextField adds internal padding, so shrink the frame slightly
+        // and right-align it to match the YEAR column in the list rows.
+        int yearFieldW = YEAR_COL_W - 4;  // slightly narrower to match visual
+        editYear.frame   = NSMakeRect (lx + lw - YEAR_COL_W + 2, ly, yearFieldW, EDIT_H);
+        editYear.alignment = NSTextAlignmentCenter;
         editTitle.hidden = NO;
         editArtist.hidden = NO;
         editYear.hidden = NO;
@@ -1100,19 +1105,42 @@ static std::wstring buildStarString (int stars)
         int waveW = rw - 32 - 76;
         int waveH = BTN_H;
 
+        // Waveform: background + 1px border
         cgFill (ctx, cgR (waveX, preRowY, waveW, waveH), TCol::waveformBg);
+        cgFill (ctx, cgR (waveX, preRowY, waveW, 1), TCol::cardBorder);
+        cgFill (ctx, cgR (waveX, preRowY + waveH - 1, waveW, 1), TCol::cardBorder);
+        cgFill (ctx, cgR (waveX, preRowY, 1, waveH), TCol::cardBorder);
+        cgFill (ctx, cgR (waveX + waveW - 1, preRowY, 1, waveH), TCol::cardBorder);
 
-        // Draw waveform bins
+        // Centered vertical bars with playhead
         if (!plugin->prelistenWaveBins.empty())
         {
-            int binCount = (int) plugin->prelistenWaveBins.size();
-            float binW = (float) waveW / binCount;
-            for (int i = 0; i < binCount; ++i)
+            int innerL = 2, innerR = waveW - 2, innerT = 2, innerB = waveH - 2;
+            int innerW = innerR - innerL;
+            int centerY = preRowY + (innerT + innerB) / 2;
+            int n = (int) plugin->prelistenWaveBins.size();
+            int headX = waveX + innerL + (int) (plugin->prelistenPos / 100.0 * innerW);
+
+            // Gray for unplayed, accent for played
+            TTColor playedColor = TCol::accent;
+            TTColor unplayedColor = TTRGB(96, 108, 132);
+
+            if (n > 0 && innerW > n)
             {
-                int h = plugin->prelistenWaveBins[i];
-                int bx = waveX + (int) (i * binW);
-                int bw = (int) binW > 0 ? (int) binW : 1;
-                cgFill (ctx, cgR (bx, preRowY + waveH - h, bw, h), TCol::textDim);
+                for (int i = 0; i < n; ++i)
+                {
+                    int x0 = waveX + innerL + (i * innerW) / n;
+                    int x1 = waveX + innerL + ((i + 1) * innerW) / n;
+                    int barW = x1 - x0;
+                    if (barW < 1) barW = 1;
+                    int amp = plugin->prelistenWaveBins[i];
+                    int h = (amp * (innerB - innerT)) / 20;
+                    if (h < 1) h = 1;
+                    TTColor barCol = (x0 < headX) ? playedColor : unplayedColor;
+                    cgFill (ctx, cgR (x0, centerY - h / 2, barW, h), barCol);
+                }
+                // Playhead line
+                cgFill (ctx, cgR (headX, preRowY + innerT, 1, innerB - innerT), TCol::waveformPeak);
             }
         }
 
