@@ -55,6 +55,9 @@ if(WIN32)
 
 elseif(APPLE)
     # ── macOS build ──────────────────────────────────────────────────────────
+    # Support macOS 10.13 (High Sierra) and newer
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version")
+
     enable_language(OBJCXX)
 
     add_library(TigerTanda MODULE
