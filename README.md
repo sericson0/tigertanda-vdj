@@ -1,15 +1,19 @@
-# Tiger Tanda
+<p align="center">
+  <img src="TigerTandaLogoV2.png" alt="Tiger Tanda" width="200">
+</p>
 
-A VirtualDJ plugin for tango DJs to build tandas by searching a curated metadata database.
+VirtualDJ plugin to help tango DJs build tandas.
 
-Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against a tango metadata database, and helps you find complementary songs to build a complete tanda (a set of 3-4 songs by the same artist/orchestra).
+Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against a curated tango metadata database, and helps you find complementary songs to build a complete tanda.
 
 ## Features
 
-- **Fuzzy song identification** — automatically detects the song selected in VirtualDJ's browser and matches it against the metadata database
-- **Filtered tanda search** — find matching songs filtered by artist, singer, orchestra, genre, grouping, label, and year range
+- **Fuzzy song identification** — automatically detects the song selected in VirtualDJ's browser and fuzzy-matches it against the metadata database
+- **Filtered tanda search** — find matching songs filtered by artist, singer, orchestra, genre, grouping, label, track, and year range
 - **Smart VDJ browser search** — searches VirtualDJ's browser and scores results by artist, title, year closeness, stars, and play count
+- **Cover art** — displays embedded album art from your audio files (MP3, FLAC, AIFF, M4A) in the browse list
 - **Prelisten waveform** — preview songs directly from the plugin with a visual waveform
+- **Add to playlist** — add songs to VirtualDJ's automix playlist or sidelist directly from the plugin
 - **Cross-platform** — Windows (DLL) and macOS (bundle)
 
 ## Installation
@@ -23,7 +27,8 @@ Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against
    Documents\VirtualDJ\Plugins64\SoundEffect\
    ```
 4. Restart VirtualDJ
-5. The Tiger Tanda window appears automatically when VirtualDJ is in the foreground
+5. Click one of the Master Effects slots -> click More... -> Select TigerTanda -> Use the '>' button to add. 
+6. You can now add TigerTanda to an effects slot and open it.   
 
 ### macOS
 
@@ -38,29 +43,29 @@ Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against
 
 ## Usage
 
-Tiger Tanda follows a three-step workflow:
+Tiger Tanda uses a two-column layout with a Main view and a Settings view, toggled via the gear icon.
 
-### 1. Identify (Track tab)
+### Main View
 
-Browse songs in VirtualDJ as you normally would. Tiger Tanda automatically detects the selected song and fuzzy-matches it against the metadata database. Up to 5 candidates appear in the Track tab.
+The main view has two columns:
 
-Click a candidate to confirm the match.
+**Left column — Identify & Match:**
 
-### 2. Search (Matches tab)
+1. **Search row** — title, artist, and year fields auto-populate as you browse songs in VirtualDJ. Use the lock icon to freeze the search fields while you navigate away.
+2. **Candidates** — up to 3 fuzzy-matched candidates from the metadata database. Click one to confirm the match and trigger a tanda search.
+3. **Matches** — up to 20 songs that pair well with the confirmed track, filtered by your active settings and sorted by year. Double-click a match to search for it in VirtualDJ's browser.
 
-After confirming a candidate, Tiger Tanda searches the full database for songs that would work in a tanda together. Results are filtered by your active settings (artist, singer, orchestra, genre, grouping, label, year range) and sorted by year.
+**Right column — Browse & Add:**
 
-Up to 20 matching songs appear in the Matches tab.
+4. **Detail box** — shows detailed metadata for the selected match.
+5. **Browse list** — top results from VirtualDJ's browser, scored by how well they match (artist, title, year, stars, play count) and displayed with cover art thumbnails.
+6. **Prelisten & Add** — preview a song with the waveform display, then click **ADD** to add it to VirtualDJ's automix playlist (or right-click to add to the sidelist).
 
-### 3. Browse (Browse tab)
+### Settings View
 
-Select a match and click **Search in VDJ** to search for it in VirtualDJ's browser. Tiger Tanda scores the browser results by how well they match (artist, title, year, stars, play count) and shows the top 5.
+Toggle the gear icon to open Settings. The left column has search filters, and the right column explains how the plugin works.
 
-Click a result to jump to it in VirtualDJ's browser. Use the prelisten button to preview the song directly.
-
-## Settings
-
-Open the **Settings** tab to configure search filters:
+**Search filters:**
 
 - **Artist** — match songs by the same artist
 - **Singer** — match songs with the same singer
@@ -68,7 +73,8 @@ Open the **Settings** tab to configure search filters:
 - **Genre** — match songs in the same genre
 - **Grouping** — match songs with the same grouping
 - **Label** — match songs on the same label
-- **Year range** — toggle on/off and cycle through ranges (±2, 3, 5, 8, or 10 years)
+- **Track** — match songs with the same track name
+- **Year range** — toggle on/off and adjust the range with +/- buttons (±2, 3, 5, 8, or 10 years)
 
 Filters are combined: only songs matching all active filters appear in results. Settings persist between sessions.
 
@@ -97,6 +103,10 @@ cmake --build build --config Release
 ```
 
 Output: `build/TigerTanda.bundle` and `build/metadata.csv`
+
+## Contact
+
+Questions or suggestions? Email [tangotoolkit@gmail.com](mailto:tangotoolkit@gmail.com).
 
 ## License
 
