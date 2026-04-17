@@ -58,6 +58,10 @@ elseif(APPLE)
     # Support macOS 10.13 (High Sierra) and newer
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version")
 
+    # Universal binary: Apple Silicon + Intel. VirtualDJ may run as x86_64
+    # under Rosetta even on Apple Silicon, so plugin must support both archs.
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
+
     enable_language(OBJCXX)
 
     add_library(TigerTanda MODULE
