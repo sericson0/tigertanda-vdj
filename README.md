@@ -6,29 +6,27 @@ VirtualDJ plugin to help tango DJs build tandas.
 
 Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against a curated tango metadata database, and helps you find complementary songs to build a complete tanda.
 
-## Features
-
-- **Fuzzy song identification** — automatically detects the song selected in VirtualDJ's browser and fuzzy-matches it against the metadata database
-- **Filtered tanda search** — find matching songs filtered by artist, singer, orchestra, genre, grouping, label, track, and year range
-- **Smart VDJ browser search** — searches VirtualDJ's browser and scores results by artist, title, year closeness, stars, and play count
-- **Cover art** — displays embedded album art from your audio files (MP3, FLAC, AIFF, M4A) in the browse list
-- **Prelisten waveform** — preview songs directly from the plugin with a visual waveform
-- **Add to playlist** — add songs to VirtualDJ's automix playlist or sidelist directly from the plugin
-- **Cross-platform** — Windows (DLL) and macOS (bundle)
-
 ## Installation
 
-### Windows
+### Windows (Installer)
+
+1. Download `TigerTanda-Windows-Installer.exe` from [Releases](https://github.com/sericson0/tigertanda-vdj/releases)
+2. Run the installer — it defaults to `Documents\VirtualDJ\Plugins64\SoundEffect\TigerTanda\`
+3. Restart VirtualDJ
+4. Click one of the Master Effects slots -> click More... -> Select TigerTanda -> Use the '>' button to add.
+5. You can now add TigerTanda to an effects slot and open it.
+
+### Windows (Manual)
 
 1. Download `TigerTanda-Windows.zip` from [Releases](https://github.com/sericson0/tigertanda-vdj/releases)
 2. Extract the zip — you'll get `TigerTanda.dll` and `metadata.csv`
-3. Copy both files to your VirtualDJ plugins folder:
+3. Copy both files to:
    ```
-   Documents\VirtualDJ\Plugins64\SoundEffect\
+   Documents\VirtualDJ\Plugins64\SoundEffect\TigerTanda\
    ```
 4. Restart VirtualDJ
-5. Click one of the Master Effects slots -> click More... -> Select TigerTanda -> Use the '>' button to add. 
-6. You can now add TigerTanda to an effects slot and open it.   
+5. Click one of the Master Effects slots -> click More... -> Select TigerTanda -> Use the '>' button to add.
+6. You can now add TigerTanda to an effects slot and open it.
 
 ### macOS
 
@@ -77,34 +75,6 @@ Toggle the gear icon to open Settings. The left column has search filters, and t
 - **Year range** — toggle on/off and adjust the range with +/- buttons (±2, 3, 5, 8, or 10 years)
 
 Filters are combined: only songs matching all active filters appear in results. Settings persist between sessions.
-
-## Building from Source
-
-### Prerequisites
-
-- CMake 3.22+
-- **Windows**: Visual Studio 2019+ with C++ desktop workload
-- **macOS**: Xcode command-line tools
-
-### Windows
-
-```bash
-cmake -B build -A x64
-cmake --build build --config Release
-```
-
-Output: `build/Release/TigerTanda.dll` and `build/Release/metadata.csv`
-
-### macOS
-
-```bash
-cmake -B build
-cmake --build build --config Release
-```
-
-Output: `build/TigerTanda.bundle` and `build/metadata.csv`
-
-## Contact
 
 Questions or suggestions? Email [tangotoolkit@gmail.com](mailto:tangotoolkit@gmail.com).
 
