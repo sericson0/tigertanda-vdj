@@ -231,7 +231,8 @@ void TangoMatcher::loadCsv (const std::wstring& path)
         rec.bandoneons = safe (fields, cBandoneons);
         rec.strings    = safe (fields, cStrings);
 
-        rec.normTitle = stripAccents (rec.title);
+        rec.normTitle       = stripAccents (rec.title);
+        rec.normSortedTitle = sortTokensJoin (rec.normTitle);
 
         if (!rec.date.empty())
         {
@@ -296,7 +297,13 @@ int TangoMatcher::levenshteinDistance (const std::wstring& s1, const std::wstrin
     if (m == 0) return n;
     if (n == 0) return m;
 
-    std::vector<int> prev (n + 1), curr (n + 1);
+    // Reuse scratch buffers across calls; this function is called O(N) per
+    // identification (~10K records). Per-thread to stay safe across the
+    // metadata-loader thread and the UI thread.
+    thread_local std::vector<int> prev, curr;
+    if ((int) prev.size() < n + 1) prev.resize (n + 1);
+    if ((int) curr.size() < n + 1) curr.resize (n + 1);
+
     for (int j = 0; j <= n; ++j) prev[j] = j;
 
     for (int i = 1; i <= m; ++i)
@@ -313,24 +320,42 @@ int TangoMatcher::levenshteinDistance (const std::wstring& s1, const std::wstrin
     return prev[n];
 }
 
-float TangoMatcher::tokenSortRatio (const std::wstring& s1, const std::wstring& s2)
+std::wstring TangoMatcher::sortTokensJoin (const std::wstring& s)
 {
-    auto tokens1 = tokenize (stripAccents (s1));
-    auto tokens2 = tokenize (stripAccents (s2));
+    std::vector<std::wstring> tokens;
+    std::wistringstream ss (s);
+    std::wstring tok;
+    while (ss >> tok) tokens.push_back (std::move (tok));
+    std::sort (tokens.begin(), tokens.end());
 
-    std::sort (tokens1.begin(), tokens1.end());
-    std::sort (tokens2.begin(), tokens2.end());
+    size_t total = 0;
+    for (auto& t : tokens) total += t.size() + 1;
+    std::wstring result;
+    result.reserve (total);
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (i) result += L' ';
+        result += tokens[i];
+    }
+    return result;
+}
 
-    std::wstring sorted1, sorted2;
-    for (size_t i = 0; i < tokens1.size(); ++i) { if (i) sorted1 += L' '; sorted1 += tokens1[i]; }
-    for (size_t i = 0; i < tokens2.size(); ++i) { if (i) sorted2 += L' '; sorted2 += tokens2[i]; }
-
+float TangoMatcher::tokenSortRatioPrepared (const std::wstring& sorted1,
+                                            const std::wstring& sorted2)
+{
     if (sorted1.empty() && sorted2.empty()) return 100.0f;
     int maxLen = (int)(std::max) (sorted1.size(), sorted2.size());
     if (maxLen == 0) return 100.0f;
 
     int dist = levenshteinDistance (sorted1, sorted2);
     return (1.0f - (float) dist / (float) maxLen) * 100.0f;
+}
+
+float TangoMatcher::tokenSortRatio (const std::wstring& s1, const std::wstring& s2)
+{
+    auto sorted1 = sortTokensJoin (stripAccents (s1));
+    auto sorted2 = sortTokensJoin (stripAccents (s2));
+    return tokenSortRatioPrepared (sorted1, sorted2);
 }
 
 static float yearBonus (const std::wstring& songYear, const std::wstring& recYear)
@@ -379,12 +404,15 @@ std::vector<TgMatchResult> TangoMatcher::findCandidates (const std::wstring& tit
         return results;
     }
 
+    // Pre-sort the query once; record side is already prepared as normSortedTitle.
+    auto sortedQuery = sortTokensJoin (normQuery);
+
     std::vector<Scored> scored;
     scored.reserve (records.size());
 
     for (int i = 0; i < (int) records.size(); ++i)
     {
-        float s = tokenSortRatio (normQuery, records[i].normTitle);
+        float s = tokenSortRatioPrepared (sortedQuery, records[i].normSortedTitle);
         if (s >= threshold)
             scored.push_back ({ i, s, s + yearBonus (year, records[i].year) });
     }
@@ -536,6 +564,7 @@ std::vector<TgMatchResult> TangoMatcher::findCandidatesForArtist (const std::wst
                                                                    const std::wstring& year) const
 {
     auto normQuery = stripAccents (title);
+    auto sortedQuery = sortTokensJoin (normQuery);
 
     auto parts = splitArtistParts (artist);
 
@@ -553,7 +582,7 @@ std::vector<TgMatchResult> TangoMatcher::findCandidatesForArtist (const std::wst
 
         if (bestArtist < 40.0f) continue;
 
-        float titleScore = tokenSortRatio (normQuery, records[i].normTitle);
+        float titleScore = tokenSortRatioPrepared (sortedQuery, records[i].normSortedTitle);
         float combined   = titleScore * 0.7f + bestArtist * 0.3f;
         if (combined >= threshold)
             scored.push_back ({ i, combined, combined + yearBonus (year, records[i].year) });

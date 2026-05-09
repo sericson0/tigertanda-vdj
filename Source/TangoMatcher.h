@@ -7,7 +7,8 @@ struct TgRecord
     std::wstring bandleader, orchestra, title, altTitle, genre, date, year;
     std::wstring singer, composer, author, label, master, grouping, arranger;
     std::wstring pianist, bassist, bandoneons, strings;
-    std::wstring normTitle;
+    std::wstring normTitle;        // accent-stripped, lowercased title
+    std::wstring normSortedTitle;  // normTitle with tokens sorted+joined (for tokenSortRatio)
 };
 
 struct TgMatchResult
@@ -40,6 +41,16 @@ public:
     static std::wstring stripAccents (const std::wstring& text);
     static int  levenshteinDistance (const std::wstring& s1, const std::wstring& s2);
     static float tokenSortRatio (const std::wstring& s1, const std::wstring& s2);
+
+    // Sort whitespace-separated tokens of `s` and rejoin with single spaces.
+    // Used to pre-prepare strings for tokenSortRatioPrepared.
+    static std::wstring sortTokensJoin (const std::wstring& s);
+
+    // Variant of tokenSortRatio that skips stripAccents/tokenize/sort on its
+    // inputs — caller must pass already-prepared strings (e.g. records[i].normSortedTitle).
+    static float tokenSortRatioPrepared (const std::wstring& sorted1,
+                                         const std::wstring& sorted2);
+
     static std::wstring getLastName (const std::wstring& fullName);
 
     // Name normalization: "Di Sarli, Carlos" → "Carlos Di Sarli"
