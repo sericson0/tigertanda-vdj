@@ -744,13 +744,11 @@ static void drawTextToggle (const DRAWITEMSTRUCT* di, const std::wstring& label,
     DeleteObject (pen);
 }
 
-// Extract the last whitespace-separated token from a name
-// "Pedro Laurenz" -> "Laurenz", "Héctor Farrel" -> "Farrel"
+// Extract surname while keeping particles like Di/De attached.
+// "Carlos Di Sarli" -> "Di Sarli", "Pedro Laurenz" -> "Laurenz".
 static std::wstring lastName (const std::wstring& fullName)
 {
-    if (fullName.empty()) return fullName;
-    size_t pos = fullName.find_last_of (L" \t");
-    return (pos == std::wstring::npos) ? fullName : fullName.substr (pos + 1);
+    return TangoMatcher::getLastName (fullName);
 }
 
 // Format artist for list rows: "BandleaderLast - SingerLast" (or just bandleader last if no singer)

@@ -108,17 +108,11 @@ static std::wstring fromNS (NSString* ns)
     return toWide (std::string (utf8));
 }
 
-// Extract last name from "First Last" or "Last, First"
+// Extract surname while keeping particles like Di/De attached.
+// "Carlos Di Sarli" -> "Di Sarli", "Pedro Laurenz" -> "Laurenz".
 static std::wstring lastName (const std::wstring& name)
 {
-    if (name.empty()) return {};
-    auto comma = name.find (L',');
-    if (comma != std::wstring::npos)
-        return name.substr (0, comma);
-    auto space = name.rfind (L' ');
-    if (space != std::wstring::npos)
-        return name.substr (space + 1);
-    return name;
+    return TangoMatcher::getLastName (name);
 }
 
 static std::wstring formatArtist (const TgRecord& rec)
