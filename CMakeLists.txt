@@ -1,8 +1,17 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Use the MSVC_RUNTIME_LIBRARY target property (CMake 3.15+) to control /MT vs /MD.
+cmake_policy(SET CMP0091 NEW)
+
 project(TigerTanda VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Statically link the MSVC C runtime so the plugin DLL has no external
+# VCRUNTIME140/MSVCP140/api-ms-win-crt dependencies. VirtualDJ 2025 reports
+# v8 plugins with dynamic CRT linkage as "incompatible".
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  TigerTanda VDJ Native Plugin — cross-platform (Windows DLL / macOS bundle)

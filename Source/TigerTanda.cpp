@@ -183,6 +183,13 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetPluginInfo (TVdjPluginInfo8* info)
     return S_OK;
 }
 
+// TigerTanda is a UI-only plugin; it lives under Plugins64\SoundEffect so VDJ
+// loads it via the DSP interface, but it never modifies audio.
+HRESULT VDJ_API TigerTandaPlugin::OnProcessSamples (float* /*buffer*/, int /*nb*/)
+{
+    return S_OK;
+}
+
 ULONG VDJ_API TigerTandaPlugin::Release()
 {
     if (metadataThread.joinable())
@@ -510,11 +517,16 @@ void TigerTandaPlugin::saveSettings()
 //  DLL Entry Point
 // ─────────────────────────────────────────────────────────────────────────────
 
+// VirtualDJ probes plugins by IID based on the folder they were found in:
+//   Plugins64\SoundEffect\  → IID_IVdjPluginDsp8
+// We also accept IID_IVdjPluginBasic8 so the plugin still loads if a host
+// scans us as a generic plugin (older VDJ behaviour / non-SoundEffect folder).
 #if defined(_WIN32)
 STDAPI DllGetClassObject (REFCLSID rclsid, REFIID riid, LPVOID* ppObject)
 {
     if (memcmp (&rclsid, &CLSID_VdjPlugin8, sizeof (GUID)) == 0
-        && memcmp (&riid, &IID_IVdjPluginBasic8, sizeof (GUID)) == 0)
+        && (memcmp (&riid, &IID_IVdjPluginDsp8,   sizeof (GUID)) == 0
+         || memcmp (&riid, &IID_IVdjPluginBasic8, sizeof (GUID)) == 0))
     {
         *ppObject = new TigerTandaPlugin();
         return S_OK;
@@ -525,7 +537,8 @@ STDAPI DllGetClassObject (REFCLSID rclsid, REFIID riid, LPVOID* ppObject)
 extern "C" VDJ_EXPORT HRESULT VDJ_API DllGetClassObject (const GUID& rclsid, const GUID& riid, void** ppObject)
 {
     if (memcmp (&rclsid, &CLSID_VdjPlugin8, sizeof (GUID)) == 0
-        && memcmp (&riid, &IID_IVdjPluginBasic8, sizeof (GUID)) == 0)
+        && (memcmp (&riid, &IID_IVdjPluginDsp8,   sizeof (GUID)) == 0
+         || memcmp (&riid, &IID_IVdjPluginBasic8, sizeof (GUID)) == 0))
     {
         *ppObject = new TigerTandaPlugin();
         return S_OK;

@@ -8,6 +8,7 @@
 
 #define NODLLEXPORT
 #include "vdjPlugin8.h"
+#include "vdjDsp8.h"
 
 // vdjPlugin8.h defines S_OK/E_FAIL on Mac but not these standard COM macros
 #ifdef VDJ_MAC
@@ -174,7 +175,7 @@ typedef RECT TTRect;
 //  Plugin class
 // ─────────────────────────────────────────────────────────────────────────────
 
-class TigerTandaPlugin : public IVdjPlugin8
+class TigerTandaPlugin : public IVdjPluginDsp8
 {
 public:
     TigerTandaPlugin();
@@ -185,6 +186,7 @@ public:
     ULONG   VDJ_API Release() override;
     HRESULT VDJ_API OnGetUserInterface (TVdjPluginInterface8* pluginInterface) override;
     HRESULT VDJ_API OnParameter (int id) override;
+    HRESULT VDJ_API OnProcessSamples (float* buffer, int nb) override;
 
     // VDJ helpers
     std::wstring vdjGetString (const char* query);
