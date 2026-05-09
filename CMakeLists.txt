@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Use the MSVC_RUNTIME_LIBRARY target property (CMake 3.15+) to control /MT vs /MD.
 cmake_policy(SET CMP0091 NEW)
 
-project(TigerTanda VERSION 1.0.0 LANGUAGES CXX)
+project(TigerTanda VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

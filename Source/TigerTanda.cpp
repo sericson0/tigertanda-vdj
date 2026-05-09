@@ -177,7 +177,7 @@ HRESULT VDJ_API TigerTandaPlugin::OnGetPluginInfo (TVdjPluginInfo8* info)
     info->PluginName  = "TigerTanda";
     info->Author      = "TigerTanda Project";
     info->Description = "Argentine tango tanda builder - find similar songs";
-    info->Version     = "1.0.0";
+    info->Version     = "1.1.0";
     info->Flags       = VDJFLAG_NODOCK;
     info->Bitmap      = nullptr;
     return S_OK;
