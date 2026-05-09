@@ -3,7 +3,7 @@
 ; into {localappdata}\VirtualDJ\Plugins64\SoundEffect\TigerTanda by default.
 
 #define MyAppName      "Tiger Tanda"
-#define MyAppVersion   "1.0.0"
+#define MyAppVersion   "1.0.4"
 #define MyAppPublisher "Sean Ericson"
 #define MyAppURL       "https://github.com/sericson0/tigertanda-vdj"
 
