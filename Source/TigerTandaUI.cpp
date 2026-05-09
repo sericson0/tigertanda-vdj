@@ -1326,18 +1326,26 @@ LRESULT CALLBACK TandaWndProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         p->hBtnClose        = mkBtn (IDC_BTN_CLOSE,        L"X");
         p->hBtnTabSettings  = mkBtn (IDC_BTN_TAB_SETTINGS, L"\u26ED");  // ⛭
 
-        // Search row
+        // Search row.
+        // EM_SETMARGINS gives each edit a 4px text margin; combined with the
+        // 2px WS_EX_CLIENTEDGE border that's a 6px effective inset, matching
+        // the candidate/match list row textInset so column text aligns
+        // pixel-exactly under the input above.
+        const LPARAM kEditMargins = MAKELONG (4, 4);
+
         p->hEditTitle = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
                                          WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                          0, 0, 10, 10, hwnd,
                                          (HMENU) IDC_EDIT_TITLE, nullptr, nullptr);
         SendMessageW (p->hEditTitle, EM_SETCUEBANNER, TRUE, (LPARAM) L"Title...");
+        SendMessageW (p->hEditTitle, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, kEditMargins);
 
         p->hEditArtist = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
                                           WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                           0, 0, 10, 10, hwnd,
                                           (HMENU) IDC_EDIT_ARTIST, nullptr, nullptr);
         SendMessageW (p->hEditArtist, EM_SETCUEBANNER, TRUE, (LPARAM) L"Artist...");
+        SendMessageW (p->hEditArtist, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, kEditMargins);
 
         p->hEditYear = CreateWindowExW (WS_EX_CLIENTEDGE, L"EDIT", L"",
                                         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_CENTER,
