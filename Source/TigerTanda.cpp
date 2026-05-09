@@ -353,6 +353,18 @@ void TigerTandaPlugin::detectMetadataFolder()
         }
     }
 
+    // Try %LOCALAPPDATA%/VirtualDJ/Plugins64/SoundEffect/TigerTanda/ (installer default)
+    wchar_t localAppData[MAX_PATH] = {};
+    if (SHGetFolderPathW (nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData) == S_OK)
+    {
+        fs::path vdjDir = fs::path (localAppData) / L"VirtualDJ" / L"Plugins64" / L"SoundEffect" / L"TigerTanda";
+        if (fs::is_regular_file (vdjDir / L"metadata.csv", ec))
+        {
+            metadataFolder = vdjDir.wstring();
+            return;
+        }
+    }
+
     // Try Documents/VirtualDJ/Plugins64/
     wchar_t docs[MAX_PATH] = {};
     if (SHGetFolderPathW (nullptr, CSIDL_PERSONAL, nullptr, 0, docs) == S_OK)

@@ -1,6 +1,6 @@
 ; Tiger Tanda — Inno Setup installer script
 ; Builds a single-exe installer that places TigerTanda.dll + metadata.csv
-; into {userdocs}\VirtualDJ\Plugins64\SoundEffect\TigerTanda by default.
+; into {localappdata}\VirtualDJ\Plugins64\SoundEffect\TigerTanda by default.
 
 #define MyAppName      "Tiger Tanda"
 #define MyAppVersion   "1.0.0"
@@ -13,7 +13,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppSupportURL={#MyAppURL}
-DefaultDirName={userdocs}\VirtualDJ\Plugins64\SoundEffect\TigerTanda
+DefaultDirName={localappdata}\VirtualDJ\Plugins64\SoundEffect\TigerTanda
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 OutputDir=..\build

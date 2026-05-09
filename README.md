@@ -11,7 +11,7 @@ Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against
 ### Windows (Installer)
 
 1. Download `TigerTanda-Windows-Installer.exe` from [Releases](https://github.com/sericson0/tigertanda-vdj/releases)
-2. Run the installer — it defaults to `Documents\VirtualDJ\Plugins64\SoundEffect\TigerTanda\`
+2. Run the installer — it defaults to `%LOCALAPPDATA%\VirtualDJ\Plugins64\SoundEffect\TigerTanda\`
 3. Restart VirtualDJ
 4. Click one of the Master Effects slots -> click More... -> Select TigerTanda -> Use the '>' button to add.
 5. You can now add TigerTanda to an effects slot and open it.
@@ -22,7 +22,7 @@ Tiger Tanda identifies the song you're browsing in VirtualDJ, matches it against
 2. Extract the zip — you'll get `TigerTanda.dll` and `metadata.csv`
 3. Copy both files to:
    ```
-   Documents\VirtualDJ\Plugins64\SoundEffect\TigerTanda\
+   %LOCALAPPDATA%\VirtualDJ\Plugins64\SoundEffect\TigerTanda\
    ```
 4. Restart VirtualDJ
 5. Click one of the Master Effects slots -> click More... -> Select TigerTanda -> Use the '>' button to add.
